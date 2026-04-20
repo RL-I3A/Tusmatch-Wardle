@@ -17,6 +17,11 @@ let guesses = [];
 let isGameOver = false;
 let currentHints = [];
 let hasPlayedDailyToday = false; // Track if daily game already played
+const gameUrlParams = new URLSearchParams(window.location.search);
+const gameMode = gameUrlParams.get('mode') || 'daily';
+const isMultiplayerMode = gameMode === 'private';
+const isDailyMode = gameMode === 'daily';
+const DAILY_PROGRESS_STORAGE_KEY = 'tusmatch_daily_progress_v1';
 
 const grid = document.getElementById("grid");
 const themeBtn = document.getElementById("themeToggle");
@@ -63,19 +68,22 @@ function seededRandom(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
-function getDailyWord(offset = 0) {
-    if (COMMON_WORDS.length === 0) return "ERREUR";
-
+function getLocalDateString(offset = 0) {
     const now = new Date();
-    // Ajouter l'offset en jours
     now.setDate(now.getDate() + offset);
 
-    // Créer une chaîne de date locale YYYY-MM-DD
-    // Cela garantit que c'est basé sur le fuseau horaire de l'utilisateur
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
-    const dateString = `${year}-${month}-${day}`;
+    return `${year}-${month}-${day}`;
+}
+
+function getDailyWord(offset = 0) {
+    if (COMMON_WORDS.length === 0) return "ERREUR";
+
+    // Créer une chaîne de date locale YYYY-MM-DD
+    // Cela garantit que c'est basé sur le fuseau horaire de l'utilisateur
+    const dateString = getLocalDateString(offset);
 
     // Créer un hash simple de la date pour servir de graine
     let seed = 0;
@@ -123,7 +131,7 @@ async function checkDailyStatus() {
         }
 
         if (stats && stats.last_daily_date) {
-            const today = new Date().toISOString().split('T')[0];
+            const today = getLocalDateString();
             if (stats.last_daily_date === today) {
                 hasPlayedDailyToday = true;
                 setTimeout(() => {
@@ -135,6 +143,90 @@ async function checkDailyStatus() {
         console.error("Exception checking daily status:", e);
     }
 }
+
+function cleanupStaleDailyProgress() {
+    if (!isDailyMode) return;
+
+    const raw = localStorage.getItem(DAILY_PROGRESS_STORAGE_KEY);
+    if (!raw) return;
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.date !== getLocalDateString()) {
+            localStorage.removeItem(DAILY_PROGRESS_STORAGE_KEY);
+        }
+    } catch (e) {
+        localStorage.removeItem(DAILY_PROGRESS_STORAGE_KEY);
+    }
+}
+
+function readDailyProgress() {
+    if (!isDailyMode) return null;
+
+    const raw = localStorage.getItem(DAILY_PROGRESS_STORAGE_KEY);
+    if (!raw) return null;
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.date !== getLocalDateString()) {
+            localStorage.removeItem(DAILY_PROGRESS_STORAGE_KEY);
+            return null;
+        }
+        return parsed;
+    } catch (e) {
+        localStorage.removeItem(DAILY_PROGRESS_STORAGE_KEY);
+        return null;
+    }
+}
+
+function saveDailyProgress({ completed = false, victory = null, score = null } = {}) {
+    if (!isDailyMode || !targetWord || isMultiplayerMode) return;
+
+    const payload = {
+        date: getLocalDateString(),
+        word: targetWord,
+        guesses: [...guesses],
+        completed,
+        victory,
+        score
+    };
+
+    localStorage.setItem(DAILY_PROGRESS_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function restoreDailyProgressIfAny() {
+    if (!isDailyMode || isMultiplayerMode) return false;
+
+    const saved = readDailyProgress();
+    if (!saved || !Array.isArray(saved.guesses) || saved.guesses.length === 0) return false;
+    if (saved.word && saved.word !== targetWord) {
+        localStorage.removeItem(DAILY_PROGRESS_STORAGE_KEY);
+        return false;
+    }
+
+    saved.guesses.forEach((guessWord) => {
+        if (typeof guessWord === 'string' && guessWord.length === wordLength) {
+            window.restoreGuess(guessWord);
+        }
+    });
+
+    const lastGuess = guesses[guesses.length - 1] || "";
+    const inferredVictory = lastGuess === targetWord;
+    const resolvedVictory = (typeof saved.victory === 'boolean') ? saved.victory : inferredVictory;
+    const shouldShowCompletedState = Boolean(saved.completed) || isGameOver;
+
+    if (shouldShowCompletedState && isGameOver) {
+        const fallbackScore = lastGuess ? calculateScore(resolvedVictory, guesses.length, lastGuess) : 0;
+        const finalScore = Number.isFinite(saved.score) ? saved.score : fallbackScore;
+        showEndScreen(resolvedVictory, targetWord, null, finalScore);
+    } else {
+        showToast("Partie du jour reprise");
+    }
+
+    return true;
+}
+
+cleanupStaleDailyProgress();
 
 // --- INITIALISATION ---
 async function initGame(customWord = null) {
@@ -208,7 +300,14 @@ async function initGame(customWord = null) {
         document.body.className = savedTheme;
     }
 
-    updateGrid();
+    if (isDailyMode && !isMultiplayerMode) {
+        const restored = restoreDailyProgressIfAny();
+        if (!restored) {
+            updateGrid();
+        }
+    } else {
+        updateGrid();
+    }
 }
 
 // --- LOGIQUE DE JEU ---
@@ -433,10 +532,14 @@ function submitGuess() {
     if (typeof window.saveGuessesToSession === 'function') {
         window.saveGuessesToSession();
     }
+
+    if (isDailyMode && !isMultiplayerMode) {
+        saveDailyProgress();
+    }
     
     // Vérification Victoire/Défaite après l'animation
     setTimeout(() => {
-        const isMultiplayer = new URLSearchParams(window.location.search).get('mode') === 'private';
+        const isMultiplayer = isMultiplayerMode;
 
         if (guessString === targetWord) {
             const score = calculateScore(true, guesses.length, guessString);
@@ -452,8 +555,11 @@ function submitGuess() {
                 if (!isMultiplayer) {
                     showEndScreen(true, targetWord, null, score);
                     // Update Daily Stats
-                    if (typeof updateDailyStats === 'function') {
+                    if (isDailyMode && typeof updateDailyStats === 'function') {
                         updateDailyStats(true, guesses.length);
+                    }
+                    if (isDailyMode) {
+                        saveDailyProgress({ completed: true, victory: true, score });
                     }
                 }
                 // If multiplayer, handleRoundEnd will take over when ready
@@ -473,8 +579,11 @@ function submitGuess() {
                 if (!isMultiplayer) {
                     showEndScreen(false, targetWord, null, score);
                     // Update Daily Stats
-                    if (typeof updateDailyStats === 'function') {
+                    if (isDailyMode && typeof updateDailyStats === 'function') {
                         updateDailyStats(false, guesses.length);
+                    }
+                    if (isDailyMode) {
+                        saveDailyProgress({ completed: true, victory: false, score });
                     }
                 }
                 // If multiplayer, handleRoundEnd will take over when ready
@@ -856,8 +965,7 @@ function updateMaxScoreDisplay() {
 }
 
 // Lancer le jeu (sauf si mode privé, on attend le lobby)
-const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('mode') !== 'private') {
+if (!isMultiplayerMode) {
     initGame();
 }
 
@@ -1024,6 +1132,10 @@ function submitSkippedGuess() {
     });
     
     guesses.push(dummyString);
+
+    if (isDailyMode && !isMultiplayerMode) {
+        saveDailyProgress();
+    }
     
     // Send to multiplayer (all absent pattern)
     if (typeof window.sendMultiplayerGuess === 'function') {
@@ -1033,7 +1145,7 @@ function submitSkippedGuess() {
     
     // Check Game Over (Defeat by exhaustion)
     if (guesses.length === MAX_GUESSES) {
-        const isMultiplayer = new URLSearchParams(window.location.search).get('mode') === 'private';
+        const isMultiplayer = isMultiplayerMode;
         const score = calculateScore(false, guesses.length, dummyString);
         
         // Trigger Animation then End Game
@@ -1042,6 +1154,9 @@ function submitSkippedGuess() {
                 window.handleMultiplayerEnd(false, targetWord, score);
             } else {
                 showEndScreen(false, targetWord, null, score);
+                if (isDailyMode) {
+                    saveDailyProgress({ completed: true, victory: false, score });
+                }
             }
         });
         isGameOver = true;
@@ -1094,6 +1209,8 @@ window.forceEndRoundAnimation = function(onComplete) {
 // --- STATS UPDATE LOGIC ---
 
 async function updateDailyStats(victory, guessCount) {
+    if (!isDailyMode) return;
+
     // Check if user is logged in
     const { data: { session } } = await window.supabaseClient.auth.getSession();
     if (!session || !session.user) return;
@@ -1155,7 +1272,7 @@ async function updateDailyStats(victory, guessCount) {
                 daily_current_streak: newStreak,
                 daily_max_streak: newMaxStreak,
                 daily_distribution: distribution,
-                last_daily_date: new Date().toISOString().split('T')[0], // Mark as played today
+                last_daily_date: getLocalDateString(), // Mark as played today
                 updated_at: new Date().toISOString()
             })
             .eq('user_id', userId);
