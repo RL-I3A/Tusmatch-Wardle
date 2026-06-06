@@ -119,9 +119,10 @@ async function checkDailyStatus() {
     if (!session || !session.user) return;
 
     try {
+        // MODIF : on sélectionne aussi les colonnes de sauvegarde en cours
         const { data: stats, error } = await window.supabaseClient
             .from('user_stats')
-            .select('last_daily_date')
+            .select('last_daily_date, daily_current_guesses, daily_current_date')
             .eq('user_id', session.user.id)
             .single();
 
@@ -137,10 +138,45 @@ async function checkDailyStatus() {
                 setTimeout(() => {
                     showToast("Vous avez déjà joué aujourd'hui. Cette partie ne comptera pas pour vos statistiques.");
                 }, 1000);
+            // MODIF : sinon, si une partie est en cours (pas encore terminée), on restaure les essais depuis la DB
+            } else if (stats.daily_current_date === today && stats.daily_current_guesses) {
+                try {
+                    const savedGuesses = JSON.parse(stats.daily_current_guesses);
+                    if (Array.isArray(savedGuesses) && savedGuesses.length > 0) {
+                        savedGuesses.forEach(g => {
+                            if (typeof g === 'string' && g.length === wordLength) {
+                                window.restoreGuess(g);
+                            }
+                        });
+                        showToast("Partie du jour reprise");
+                    }
+                } catch(e) {
+                    console.error("Erreur restauration guesses DB:", e);
+                }
             }
         }
     } catch (e) {
         console.error("Exception checking daily status:", e);
+    }
+}
+
+// MODIF : nouvelle fonction pour sauvegarder les guesses en cours dans Supabase (anti-triche)
+async function saveDailyProgressToDB(currentGuesses) {
+    if (!isDailyMode || isMultiplayerMode) return;
+
+    const { data: { session } } = await window.supabaseClient.auth.getSession();
+    if (!session || !session.user) return;
+
+    try {
+        await window.supabaseClient
+            .from('user_stats')
+            .update({
+                daily_current_guesses: JSON.stringify(currentGuesses),
+                daily_current_date: getLocalDateString()
+            })
+            .eq('user_id', session.user.id);
+    } catch (e) {
+        console.error("Erreur sauvegarde guesses DB:", e);
     }
 }
 
@@ -535,6 +571,8 @@ function submitGuess() {
 
     if (isDailyMode && !isMultiplayerMode) {
         saveDailyProgress();
+        // MODIF : sauvegarde aussi dans Supabase après chaque essai (anti-triche retour arrière)
+        saveDailyProgressToDB([...guesses]);
     }
     
     // Vérification Victoire/Défaite après l'animation
@@ -556,7 +594,8 @@ function submitGuess() {
                     showEndScreen(true, targetWord, null, score);
                     // Update Daily Stats
                     if (isDailyMode && typeof updateDailyStats === 'function') {
-                        updateDailyStats(true, guesses.length);
+                        // MODIF : on passe le score en 3ème paramètre
+                        updateDailyStats(true, guesses.length, score);
                     }
                     if (isDailyMode) {
                         saveDailyProgress({ completed: true, victory: true, score });
@@ -580,7 +619,8 @@ function submitGuess() {
                     showEndScreen(false, targetWord, null, score);
                     // Update Daily Stats
                     if (isDailyMode && typeof updateDailyStats === 'function') {
-                        updateDailyStats(false, guesses.length);
+                        // MODIF : on passe le score en 3ème paramètre
+                        updateDailyStats(false, guesses.length, score);
                     }
                     if (isDailyMode) {
                         saveDailyProgress({ completed: true, victory: false, score });
@@ -1135,6 +1175,8 @@ function submitSkippedGuess() {
 
     if (isDailyMode && !isMultiplayerMode) {
         saveDailyProgress();
+        // MODIF : sauvegarde aussi dans Supabase
+        saveDailyProgressToDB([...guesses]);
     }
     
     // Send to multiplayer (all absent pattern)
@@ -1206,9 +1248,11 @@ window.forceEndRoundAnimation = function(onComplete) {
         onComplete();
     }
 };
+
 // --- STATS UPDATE LOGIC ---
 
-async function updateDailyStats(victory, guessCount) {
+// MODIF : ajout du paramètre score (3ème argument)
+async function updateDailyStats(victory, guessCount, score = 0) {
     if (!isDailyMode) return;
 
     // Check if user is logged in
@@ -1263,6 +1307,9 @@ async function updateDailyStats(victory, guessCount) {
             distribution[guessCount - 1]++;
         }
 
+        // MODIF : calcul du nouveau total de points
+        const newTotalPoints = (stats.daily_total_points || 0) + score;
+
         // 3. Update DB
         await window.supabaseClient
             .from('user_stats')
@@ -1272,7 +1319,10 @@ async function updateDailyStats(victory, guessCount) {
                 daily_current_streak: newStreak,
                 daily_max_streak: newMaxStreak,
                 daily_distribution: distribution,
-                last_daily_date: getLocalDateString(), // Mark as played today
+                daily_total_points: newTotalPoints,       // MODIF : sauvegarde du score
+                daily_current_guesses: null,              // MODIF : nettoyage fin de partie
+                daily_current_date: null,                 // MODIF : nettoyage fin de partie
+                last_daily_date: getLocalDateString(),
                 updated_at: new Date().toISOString()
             })
             .eq('user_id', userId);
