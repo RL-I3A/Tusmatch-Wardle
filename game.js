@@ -143,6 +143,10 @@ async function checkDailyStatus() {
                 try {
                     const savedGuesses = JSON.parse(stats.daily_current_guesses);
                     if (Array.isArray(savedGuesses) && savedGuesses.length > 0) {
+                        
+                        // MODIFICATION ICI: Vider le localStorage pour éviter la double restauration
+                        localStorage.removeItem(DAILY_PROGRESS_STORAGE_KEY);
+                        
                         savedGuesses.forEach(g => {
                             if (typeof g === 'string' && g.length === wordLength) {
                                 window.restoreGuess(g);
@@ -279,7 +283,10 @@ async function initGame(customWord = null) {
         if (dailyWord) {
             targetWord = dailyWord.toUpperCase();
             // console.log("Mot du jour chargé (Local) :", targetWord);
-            checkDailyStatus(); // Check if already played
+            
+            // MODIFICATION ICI: On ajoute await
+            await checkDailyStatus(); // Check if already played
+            
         } else {
             // Fallback ultime
             targetWord = COMMON_WORDS[Math.floor(Math.random() * COMMON_WORDS.length)];
