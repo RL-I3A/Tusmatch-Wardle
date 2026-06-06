@@ -144,7 +144,7 @@ async function checkDailyStatus() {
                     const savedGuesses = JSON.parse(stats.daily_current_guesses);
                     if (Array.isArray(savedGuesses) && savedGuesses.length > 0) {
                         
-                        // MODIFICATION ICI: Vider le localStorage pour éviter la double restauration
+                        // Vider le localStorage pour éviter la double restauration
                         localStorage.removeItem(DAILY_PROGRESS_STORAGE_KEY);
                         
                         savedGuesses.forEach(g => {
@@ -282,11 +282,6 @@ async function initGame(customWord = null) {
         
         if (dailyWord) {
             targetWord = dailyWord.toUpperCase();
-            // console.log("Mot du jour chargé (Local) :", targetWord);
-            
-            // MODIFICATION ICI: On ajoute await
-            await checkDailyStatus(); // Check if already played
-            
         } else {
             // Fallback ultime
             targetWord = COMMON_WORDS[Math.floor(Math.random() * COMMON_WORDS.length)];
@@ -343,9 +338,12 @@ async function initGame(customWord = null) {
         document.body.className = savedTheme;
     }
 
+    // MODIFICATION ICI : On vérifie les restaurations (DB et Local) APRÈS avoir construit la grille
     if (isDailyMode && !isMultiplayerMode) {
+        await checkDailyStatus(); 
         const restored = restoreDailyProgressIfAny();
-        if (!restored) {
+        // Si checkDailyStatus ou restoreDailyProgressIfAny ont restauré, guesses n'est pas vide
+        if (!restored && guesses.length === 0) {
             updateGrid();
         }
     } else {
@@ -844,9 +842,6 @@ if (helpModesBtn && modesModal) {
         }
     });
 }
-
-
-
 
 // --- SESSION RESTORATION HELPERS ---
 
