@@ -235,15 +235,12 @@ function injectProfileModal() {
         <div class="custom-modal-box" style="max-width: 600px;">
             <h3>Mon Profil</h3>
             
-            <!-- TABS -->
             <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px;">
                 <button id="tab-profile-info" class="tab-btn active" onclick="switchProfileTab('info')">Infos</button>
                 <button id="tab-profile-friends" class="tab-btn" onclick="switchProfileTab('friends')">Amis</button>
             </div>
 
-            <!-- TAB CONTENT: INFO -->
             <div id="content-profile-info" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
-                <!-- Left: Avatar & Pseudo -->
                 <div style="margin: 20px 0; text-align: center; flex: 1; min-width: 200px;">
                     <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 15px;">
                         <button id="btn-prev-profile-avatar" class="avatar-nav-btn">‹</button>
@@ -258,7 +255,6 @@ function injectProfileModal() {
                     </div>
                 </div>
 
-                <!-- Right: Stats -->
                 <div style="flex: 1; min-width: 200px; text-align: left; background: rgba(0,0,0,0.05); padding: 15px; border-radius: 10px;">
                     <h4 style="margin-bottom: 10px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">Statistiques</h4>
                     
@@ -296,7 +292,6 @@ function injectProfileModal() {
                 </div>
             </div>
 
-            <!-- TAB CONTENT: FRIENDS -->
             <div id="content-profile-friends" class="hidden" style="text-align: left;">
                 <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                     <input type="text" id="add-friend-input" class="lobby-input" placeholder="Code Ami (ex: A7B2X9)" style="margin: 0; flex: 1; text-transform: uppercase;">
@@ -768,13 +763,11 @@ function injectLeaderboardModal() {
         <div class="custom-modal-box" style="max-width: 600px;">
             <h3>Classement</h3>
             
-            <!-- TABS -->
             <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px;">
                 <button id="tab-leaderboard-global" class="tab-btn active" onclick="switchLeaderboardTab('global')">Global</button>
                 <button id="tab-leaderboard-friends" class="tab-btn" onclick="switchLeaderboardTab('friends')">Amis</button>
             </div>
 
-            <!-- CONTENT -->
             <div id="leaderboard-content" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--tile-border); border-radius: 8px; padding: 10px;">
                 <p style="text-align: center; opacity: 0.6;">Chargement...</p>
             </div>
@@ -843,7 +836,9 @@ async function loadLeaderboard(type) {
         }
 
         let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">';
-        html += '<tr style="border-bottom: 1px solid #ccc; text-align: left;"><th style="padding: 5px;">#</th><th style="padding: 5px;">Joueur</th><th style="padding: 5px;">Victoires Jour</th><th style="padding: 5px;">Victoires Multi</th></tr>';
+        
+        // MODIFICATION ICI: Ajout de la colonne "Points Jour"
+        html += '<tr style="border-bottom: 1px solid #ccc; text-align: left;"><th style="padding: 5px;">#</th><th style="padding: 5px;">Joueur</th><th style="padding: 5px;">Victoires Jour</th><th style="padding: 5px;">Points Jour</th><th style="padding: 5px;">Victoires Multi</th></tr>';
         
         stats.forEach((s, index) => {
             const isMe = currentUser && s.user_id === currentUser.id;
@@ -851,10 +846,12 @@ async function loadLeaderboard(type) {
             // Use pseudo if available, otherwise fallback to friend_code
             const name = s.pseudo ? s.pseudo : (s.friend_code ? `Joueur ${s.friend_code}` : 'Inconnu');
             
+            // MODIFICATION ICI: Ajout de la valeur s.daily_total_points
             html += `<tr style="${style} border-bottom: 1px solid var(--tile-border);">
                 <td style="padding: 8px;">${index + 1}</td>
                 <td style="padding: 8px;">${name}</td>
                 <td style="padding: 8px;">${s.daily_wins || 0}</td>
+                <td style="padding: 8px; font-weight: bold; color: var(--correct-color);">${s.daily_total_points || 0} pts</td>
                 <td style="padding: 8px;">${s.multiplayer_wins || 0}</td>
             </tr>`;
         });
