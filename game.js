@@ -17,6 +17,7 @@ let guesses = [];
 let isGameOver = false;
 let currentHints = [];
 let hasPlayedDailyToday = false; // Track if daily game already played
+let isUpdatingDailyStats = false;
 const gameUrlParams = new URLSearchParams(window.location.search);
 const gameMode = gameUrlParams.get('mode') || 'daily';
 const isMultiplayerMode = gameMode === 'private';
@@ -268,6 +269,21 @@ function restoreDailyProgressIfAny() {
 
 cleanupStaleDailyProgress();
 
+async function restartCurrentGame() {
+    endModal.classList.add('hidden');
+
+    if (isDailyMode && !isMultiplayerMode) {
+        localStorage.removeItem(DAILY_PROGRESS_STORAGE_KEY);
+    }
+
+    if (typeof window.triggerMultiplayerRestart === 'function' && window.currentRoomCode) {
+        await window.triggerMultiplayerRestart();
+        return;
+    }
+
+    await initGame();
+}
+
 // --- INITIALISATION ---
 async function initGame(customWord = null) {
     if (DICTIONARY.length === 0 || COMMON_WORDS.length === 0) {
@@ -303,9 +319,11 @@ async function initGame(customWord = null) {
     updateHintsFromHistory();
     currentGuess[0] = targetWord[0];
 
-    // Show Leave Button (if hidden)
+    // Keep the leave button visible in all modes, but only use the modal in private multiplayer
     const leaveBtn = document.getElementById('btn-leave-game');
-    if (leaveBtn) leaveBtn.classList.remove('hidden');
+    if (leaveBtn) {
+        leaveBtn.classList.remove('hidden');
+    }
 
     // Création de la grille HTML
     grid.innerHTML = "";
@@ -668,7 +686,90 @@ const wordDisplay = document.getElementById('wordDisplay');
 const restartBtn = document.getElementById('restartBtn');
 const shareBtn = document.getElementById('shareBtn');
 
+function buildGuessEmojiRow(guessWord) {
+    const guessParts = [...guessWord];
+    const targetParts = targetWord.split('');
+    const result = Array(wordLength).fill('absent');
+
+    for (let i = 0; i < wordLength; i++) {
+        if (guessParts[i] === targetParts[i]) {
+            result[i] = 'correct';
+            targetParts[i] = null;
+            guessParts[i] = null;
+        }
+    }
+
+    for (let i = 0; i < wordLength; i++) {
+        if (guessParts[i] && targetParts.includes(guessParts[i])) {
+            result[i] = 'present';
+            targetParts[targetParts.indexOf(guessParts[i])] = null;
+        }
+    }
+
+    return result.map(status => status === 'correct' ? '🟩' : status === 'present' ? '🟨' : '⬛').join('');
+}
+
+function buildSharePayload() {
+    const lines = [];
+
+    if (isMultiplayerMode && currentRoomCode) {
+        const roomUrl = `${window.location.origin}${window.location.pathname}?mode=private&code=${currentRoomCode}`;
+        lines.push(`Tusmatch - Salon privé ${currentRoomCode}`);
+        lines.push(roomUrl);
+        return { text: lines.join('\n'), url: roomUrl };
+    }
+
+    const finalGuess = guesses[guesses.length - 1] || '';
+    const victory = Boolean(finalGuess && finalGuess === targetWord);
+    const score = typeof window.calculateScore === 'function' && finalGuess
+        ? window.calculateScore(victory, guesses.length, finalGuess)
+        : 0;
+
+    lines.push(`Tusmatch ${getLocalDateString()}`);
+    lines.push(victory ? `Trouvé en ${guesses.length}/${MAX_GUESSES}` : `Perdu ${MAX_GUESSES}/${MAX_GUESSES}`);
+    lines.push(`Score: ${score} pts`);
+    if (guesses.length > 0) {
+        lines.push('');
+        guesses.forEach(guess => lines.push(buildGuessEmojiRow(guess)));
+    }
+    lines.push('');
+    lines.push(`${window.location.origin}${window.location.pathname}?mode=daily`);
+
+    return { text: lines.join('\n'), url: `${window.location.origin}${window.location.pathname}?mode=daily` };
+}
+
+async function shareEndGame() {
+    const payload = buildSharePayload();
+
+    try {
+        if (navigator.share) {
+            await navigator.share({
+                title: 'Tusmatch',
+                text: payload.text,
+                url: payload.url
+            });
+            return;
+        }
+
+        await navigator.clipboard.writeText(payload.text);
+        if (typeof showToast === 'function') {
+            showToast('Résultat copié !');
+        }
+    } catch (error) {
+        console.warn('Partage impossible, tentative de copie simple:', error);
+        try {
+            await navigator.clipboard.writeText(payload.text);
+            if (typeof showToast === 'function') {
+                showToast('Résultat copié !');
+            }
+        } catch (clipboardError) {
+            alert(payload.text);
+        }
+    }
+}
+
 function showEndScreen(victory, word, scores = null, myScore = null) {
+    window.lastEndScreenState = { victory, word, scores, myScore };
     endModal.classList.remove('hidden');
     endModal.classList.remove('victory', 'defeat');
     endModal.classList.add(victory ? 'victory' : 'defeat');
@@ -705,7 +806,7 @@ function showEndScreen(victory, word, scores = null, myScore = null) {
             scoreHtml += `
                 <div style="display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid var(--tile-border); align-items: center;">
                     <span style="display: flex; align-items: center; gap: 10px;">
-                        <img src="${avatarUrl}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid var(--tile-border);">
+                        <img src="${avatarUrl}" loading="eager" decoding="async" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid var(--tile-border); background: var(--tile-bg);">
                         ${displayName} ${p.est_host ? '👑' : ''}
                         ${p.id === window.myPlayerId ? '<span style="font-size:0.8em; opacity:0.7;">(Moi)</span>' : ''}
                     </span>
@@ -750,21 +851,12 @@ function showEndScreen(victory, word, scores = null, myScore = null) {
     }
 }
 
-restartBtn.addEventListener('click', () => {
-    endModal.classList.add('hidden');
-    
-    // Multiplayer Hook
-    if (typeof window.triggerMultiplayerRestart === 'function' && window.currentRoomCode) {
-        window.triggerMultiplayerRestart();
-    } else {
-        initGame();
-    }
-});
+if (restartBtn) {
+    restartBtn.addEventListener('click', restartCurrentGame);
+    restartBtn.onclick = restartCurrentGame;
+}
 
-shareBtn.addEventListener('click', () => {
-    // Placeholder for share functionality
-    alert("Fonctionnalité de partage bientôt disponible !");
-});
+shareBtn.addEventListener('click', shareEndGame);
 
 // Gestion du bouton Thème (affiche le label du thème)
 const themes = ['', 'claire', 'sombre'];
@@ -1262,12 +1354,15 @@ async function updateDailyStats(victory, guessCount, score = 0) {
     if (!session || !session.user) return;
 
     // Check if already played today
-    if (hasPlayedDailyToday) {
+    if (hasPlayedDailyToday || isUpdatingDailyStats) {
         console.log("Stats not updated: Already played today.");
         return;
     }
 
+    isUpdatingDailyStats = true;
+
     const userId = session.user.id;
+    const today = getLocalDateString();
 
     try {
         // 1. Fetch current stats
@@ -1288,6 +1383,12 @@ async function updateDailyStats(victory, guessCount, score = 0) {
             stats = newStats;
         } else if (error) {
             throw error;
+        }
+
+        if (stats && stats.last_daily_date === today) {
+            hasPlayedDailyToday = true;
+            console.log("Stats not updated: Daily stats already credited in DB today.");
+            return;
         }
 
         // 2. Calculate new stats
@@ -1324,7 +1425,7 @@ async function updateDailyStats(victory, guessCount, score = 0) {
                 daily_total_points: newTotalPoints,       // MODIF : sauvegarde du score
                 daily_current_guesses: null,              // MODIF : nettoyage fin de partie
                 daily_current_date: null,                 // MODIF : nettoyage fin de partie
-                last_daily_date: getLocalDateString(),
+                last_daily_date: today,
                 updated_at: new Date().toISOString()
             })
             .eq('user_id', userId);
@@ -1338,6 +1439,8 @@ async function updateDailyStats(victory, guessCount, score = 0) {
 
     } catch (e) {
         console.error("Error updating daily stats:", e);
+    } finally {
+        isUpdatingDailyStats = false;
     }
 }
 window.updateDailyStats = updateDailyStats;

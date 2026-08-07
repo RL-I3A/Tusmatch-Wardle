@@ -4,6 +4,50 @@
 let currentUser = null;
 let profileAvatarIndex = 1;
 const TOTAL_AVATARS = 12;
+const AVATAR_CACHE = new Map();
+
+function preloadAvatarAssets() {
+    for (let i = 1; i <= TOTAL_AVATARS; i++) {
+        const url = `assets/${i}.gif`;
+        if (AVATAR_CACHE.has(url)) continue;
+        const image = new Image();
+        image.decoding = 'async';
+        image.loading = 'eager';
+        image.src = url;
+        AVATAR_CACHE.set(url, image);
+    }
+}
+
+function setAvatarImage(imageElement, avatarUrl) {
+    if (!imageElement) return;
+
+    const resolvedUrl = avatarUrl || 'assets/1.gif';
+    const cachedImage = AVATAR_CACHE.get(resolvedUrl);
+
+    if (cachedImage && cachedImage.complete) {
+        imageElement.style.opacity = '1';
+        imageElement.src = resolvedUrl;
+        return;
+    }
+
+    imageElement.style.opacity = '0';
+    const loader = new Image();
+    loader.decoding = 'async';
+    loader.onload = () => {
+        AVATAR_CACHE.set(resolvedUrl, loader);
+        imageElement.src = resolvedUrl;
+        requestAnimationFrame(() => {
+            imageElement.style.opacity = '1';
+        });
+    };
+    loader.onerror = () => {
+        imageElement.src = resolvedUrl;
+        imageElement.style.opacity = '1';
+    };
+    loader.src = resolvedUrl;
+}
+
+preloadAvatarAssets();
 
 // --- AUTH FUNCTIONS ---
 
@@ -115,7 +159,7 @@ function updateUI(user) {
             }
             
             if (userNameSpan) userNameSpan.textContent = name;
-            if (userAvatarImg) userAvatarImg.src = avatar;
+            setAvatarImage(userAvatarImg, avatar);
 
             // Save to Session Storage for Multiplayer Pre-fill
             sessionStorage.setItem('tusmatch_pseudo', name);
@@ -361,7 +405,7 @@ function openProfileModal() {
     const meta = currentUser.user_metadata;
     profileAvatarIndex = meta.custom_avatar_index || 1;
     
-    avatarImg.src = `assets/${profileAvatarIndex}.gif`;
+    setAvatarImage(avatarImg, `assets/${profileAvatarIndex}.gif`);
     // Fix: Use display_name (custom) if available, otherwise full_name
     pseudoInput.value = meta.display_name || meta.full_name || "";
     
@@ -576,7 +620,7 @@ async function loadFriendsList(containerId = 'friends-list-container') {
             
             div.innerHTML = `
                 <div style="display:flex; align-items:center; gap:10px;">
-                    <img src="${avatarUrl}" style="width:30px; height:30px; border-radius:50%; border: 1px solid var(--tile-border);">
+                    <img src="${avatarUrl}" loading="eager" decoding="async" style="width:30px; height:30px; border-radius:50%; border: 1px solid var(--tile-border); background: var(--tile-bg); object-fit: cover;">
                     <span style="font-weight: bold;">${displayName}</span>
                 </div>
                 ${actionBtn}
@@ -755,7 +799,7 @@ function changeProfileAvatar(direction) {
     if (profileAvatarIndex > TOTAL_AVATARS) profileAvatarIndex = 1;
     if (profileAvatarIndex < 1) profileAvatarIndex = TOTAL_AVATARS;
     
-    document.getElementById('profile-modal-avatar').src = `assets/${profileAvatarIndex}.gif`;
+    setAvatarImage(document.getElementById('profile-modal-avatar'), `assets/${profileAvatarIndex}.gif`);
 }
 
 function getLocalDayStart(date = new Date()) {

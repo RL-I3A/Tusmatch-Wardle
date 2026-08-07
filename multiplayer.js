@@ -33,7 +33,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (savedAvatar) {
         currentAvatarIndex = parseInt(savedAvatar);
         const preview = document.getElementById('avatar-preview');
-        if (preview) preview.src = `assets/${currentAvatarIndex}.gif`;
+        if (preview) {
+            if (typeof window.setAvatarImage === 'function') {
+                window.setAvatarImage(preview, `assets/${currentAvatarIndex}.gif`);
+            } else {
+                preview.src = `assets/${currentAvatarIndex}.gif`;
+            }
+        }
     }
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -73,13 +79,21 @@ document.addEventListener('DOMContentLoaded', () => {
             btnPrevAvatar.addEventListener('click', () => {
                 currentAvatarIndex--;
                 if (currentAvatarIndex < 1) currentAvatarIndex = 12;
-                avatarImg.src = `assets/${currentAvatarIndex}.gif`;
+                if (typeof window.setAvatarImage === 'function') {
+                    window.setAvatarImage(avatarImg, `assets/${currentAvatarIndex}.gif`);
+                } else {
+                    avatarImg.src = `assets/${currentAvatarIndex}.gif`;
+                }
             });
 
             btnNextAvatar.addEventListener('click', () => {
                 currentAvatarIndex++;
                 if (currentAvatarIndex > 12) currentAvatarIndex = 1;
-                avatarImg.src = `assets/${currentAvatarIndex}.gif`;
+                if (typeof window.setAvatarImage === 'function') {
+                    window.setAvatarImage(avatarImg, `assets/${currentAvatarIndex}.gif`);
+                } else {
+                    avatarImg.src = `assets/${currentAvatarIndex}.gif`;
+                }
             });
         }
 
@@ -482,7 +496,7 @@ function updatePlayerListUI(players) {
 
             return `
             <div class="player-card-item" style="${cardStyle}">
-                <img src="${avatarUrl}" style="width: 30px; height: 30px; border-radius: 50%; object-fit: cover; border: 2px solid var(--tile-border);">
+                <img src="${avatarUrl}" loading="eager" decoding="async" style="width: 30px; height: 30px; border-radius: 50%; object-fit: cover; border: 2px solid var(--tile-border); background: var(--tile-bg);">
                 <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; text-align: left;">${displayName}</span>
                 ${hostIcon}
                 ${kickBtn}
@@ -786,7 +800,7 @@ async function setupOpponentsUI() {
     opponentsContainer.innerHTML = opponents.map(p => `
         <div class="opponent-card" id="opp-${p.id}">
             <div class="opponent-header" style="display:flex; align-items:center; justify-content:center; gap:5px; margin-bottom:5px;">
-                 <img src="${getAvatarUrl(p.pseudo)}" style="width:20px; height:20px; border-radius:50%; object-fit:cover; border:1px solid var(--tile-border);">
+                 <img src="${getAvatarUrl(p.pseudo)}" loading="eager" decoding="async" style="width:20px; height:20px; border-radius:50%; object-fit:cover; border:1px solid var(--tile-border); background: var(--tile-bg);">
                  <div class="opponent-name" style="margin-bottom:0;">${getDisplayName(p.pseudo)}</div>
             </div>
             <div class="mini-grid" id="grid-${p.id}" style="--mini-cols: ${wordLength}">
@@ -1233,7 +1247,7 @@ function updateIngamePlayerList(players) {
         return `
             <div class="ingame-player-card ${isMe ? 'is-me' : ''}" style="position: relative; padding-right: ${kickBtn ? '40px' : '10px'};">
                 <div style="color:${rankColor}; font-weight:bold; margin-right:8px; min-width:20px; font-size:0.9rem;">#${rank}</div>
-                <img src="${avatarUrl}" class="ingame-player-avatar-img">
+                <img src="${avatarUrl}" loading="eager" decoding="async" class="ingame-player-avatar-img">
                 <div class="ingame-player-info" style="flex: 1; min-width: 0;">
                     <div class="ingame-player-name" style="display: flex; align-items: center; gap: 5px;">
                         <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${displayName}</span> 
@@ -2054,7 +2068,7 @@ async function showEndGameRecap() {
         html += `
             <div style="display: flex; align-items: center; padding: 10px; border-bottom: 1px solid var(--tile-border); background: ${p.id === myPlayerId ? 'rgba(255,255,255,0.1)' : 'transparent'};">
                 <div style="font-size: 1.5rem; width: 40px; text-align: center; color: ${rankColor};">${medal || rank}</div>
-                <img src="${avatarUrl}" style="width: 40px; height: 40px; border-radius: 50%; margin: 0 15px; border: 2px solid ${rankColor};">
+                <img src="${avatarUrl}" loading="eager" decoding="async" style="width: 40px; height: 40px; border-radius: 50%; margin: 0 15px; border: 2px solid ${rankColor}; background: var(--tile-bg); object-fit: cover;">
                 <div style="flex: 1;">
                     <div style="font-weight: bold; font-size: 1.1rem;">${displayName}</div>
                     <div style="font-size: 0.9rem; opacity: 0.7;">${p.score || 0} pts</div>

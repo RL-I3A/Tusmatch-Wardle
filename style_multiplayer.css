@@ -153,6 +153,9 @@ body.opponents-open #btn-toggle-opponents {
     display: flex;
     align-items: center;
     justify-content: center;
+    background: var(--tile-bg);
+    backface-visibility: hidden;
+    transform: translateZ(0);
 }
 
 .avatar-preview-container img {
@@ -304,14 +307,14 @@ body.opponents-open #btn-toggle-opponents {
 .custom-modal-box {
     background: var(--bg-color); padding: 25px; border-radius: 10px;
     border: 1px solid var(--tile-border); text-align: center;
-    max-width: 300px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    max-width: 420px; width: min(92vw, 420px); box-shadow: 0 10px 25px rgba(0,0,0,0.5);
     animation: modalPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 @keyframes modalPop {
     from { transform: scale(0.8); opacity: 0; }
     to { transform: scale(1); opacity: 1; }
 }
-.modal-actions { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
+.modal-actions { display: flex; gap: 10px; justify-content: center; margin-top: 20px; flex-wrap: wrap; }
 .btn-confirm { 
     background: var(--correct); color: white; padding: 10px 20px; border-radius: 5px; 
     border: none; cursor: pointer; font-weight: bold; transition: transform 0.1s;
@@ -321,6 +324,19 @@ body.opponents-open #btn-toggle-opponents {
     border: none; cursor: pointer; font-weight: bold; transition: transform 0.1s;
 }
 .btn-confirm:hover, .btn-cancel:hover { transform: scale(1.05); }
+
+#leave-modal .custom-modal-box {
+    max-width: 520px;
+    width: min(92vw, 520px);
+}
+
+#leave-modal .modal-actions {
+    flex-direction: column;
+}
+
+#leave-modal .modal-actions button {
+    width: 100%;
+}
 
 /* Kick Button */
 .btn-kick {
@@ -597,6 +613,9 @@ body.opponents-open #btn-toggle-opponents {
     object-fit: cover;
     border: 2px solid var(--tile-border);
     background: var(--tile-bg);
+    background: var(--tile-bg);
+    backface-visibility: hidden;
+    transform: translateZ(0);
 }
 
 .ingame-player-card.is-me .ingame-player-avatar-img {

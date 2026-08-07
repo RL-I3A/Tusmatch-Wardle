@@ -33,16 +33,20 @@
     <link rel="manifest" href="/assets/site.webmanifest" />
 </head>
 <body>
-    <button id="leaderboardBtn" class="leaderboard-btn" title="Classement">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
-            <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
-            <path d="M4 22h16"></path>
-            <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path>
-            <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path>
-            <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path>
-        </svg>
-    </button>
+    <div id="top-actions" class="top-actions-shell">
+        <button id="leaderboardBtn" class="leaderboard-btn" title="Classement" aria-label="Classement">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
+                <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
+                <path d="M4 22h16"></path>
+                <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path>
+                <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path>
+                <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path>
+            </svg>
+        </button>
+        <button id="helpBtn" class="help-btn" aria-label="Aide">?</button>
+        <button id="themeToggle" class="theme-switch" aria-label="Changer de thème">Thème</button>
+    </div>
 
     <!-- Custom Leave Modal -->
     <div id="leave-modal" class="custom-modal-overlay hidden">
@@ -204,7 +208,7 @@
         </div>
     </div>
 
-    <button id="btn-leave-game" class="back-btn hidden">Retour</button>
+    <button id="btn-leave-game" class="back-btn">Retour</button>
     <button id="btn-toggle-sidebar" class="sidebar-toggle hidden">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -229,9 +233,6 @@
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
     </button>
-
-    <button id="helpBtn" class="help-btn">?</button>
-    <button id="themeToggle" class="theme-switch">Thème</button>
 
     <!-- RULES MODAL -->
     <div id="rules-modal" class="rules-modal-overlay hidden">
