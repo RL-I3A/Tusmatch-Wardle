@@ -1328,6 +1328,10 @@ async function updateDailyStats(victory, guessCount, score = 0) {
                 updated_at: new Date().toISOString()
             })
             .eq('user_id', userId);
+
+        if (score > 0 && typeof window.recordScoreEvent === 'function') {
+            await window.recordScoreEvent(score, 'daily');
+        }
             
         console.log("Daily Stats Updated!");
         hasPlayedDailyToday = true; // Prevent double update in same session

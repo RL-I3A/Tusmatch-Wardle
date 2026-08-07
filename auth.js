@@ -758,6 +758,50 @@ function changeProfileAvatar(direction) {
     document.getElementById('profile-modal-avatar').src = `assets/${profileAvatarIndex}.gif`;
 }
 
+function getLocalDayStart(date = new Date()) {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    return start;
+}
+
+function getLocalWeekStart(date = new Date()) {
+    const start = new Date(date);
+    const dayIndex = start.getDay();
+    const offset = (dayIndex + 6) % 7;
+    start.setDate(start.getDate() - offset);
+    start.setHours(0, 0, 0, 0);
+    return start;
+}
+
+function getLeaderboardScore(stats) {
+    return (stats.daily_total_points || 0) + (stats.multiplayer_total_score || 0);
+}
+
+async function recordScoreEvent(points, source) {
+    const score = Number(points) || 0;
+    if (score <= 0) return;
+
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session || !session.user) return;
+
+    try {
+        const { error } = await supabaseClient
+            .from('score_events')
+            .insert({
+                user_id: session.user.id,
+                points: score,
+                source,
+                created_at: new Date().toISOString()
+            });
+
+        if (error) throw error;
+    } catch (error) {
+        console.warn('Impossible d’enregistrer le score dans score_events:', error);
+    }
+}
+
+window.recordScoreEvent = recordScoreEvent;
+
 // --- LEADERBOARD LOGIC ---
 
 function injectLeaderboardModal() {
@@ -769,8 +813,10 @@ function injectLeaderboardModal() {
             <h3>Classement</h3>
             
             <!-- TABS -->
-            <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px;">
+            <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
                 <button id="tab-leaderboard-global" class="tab-btn active" onclick="switchLeaderboardTab('global')">Global</button>
+                <button id="tab-leaderboard-daily" class="tab-btn" onclick="switchLeaderboardTab('daily')">Jour</button>
+                <button id="tab-leaderboard-weekly" class="tab-btn" onclick="switchLeaderboardTab('weekly')">Semaine</button>
                 <button id="tab-leaderboard-friends" class="tab-btn" onclick="switchLeaderboardTab('friends')">Amis</button>
             </div>
 
@@ -798,68 +844,117 @@ window.switchLeaderboardTab = function(tab) {
     loadLeaderboard(tab);
 };
 
+async function loadRecentLeaderboard(period) {
+    const startDate = period === 'daily' ? getLocalDayStart() : getLocalWeekStart();
+    const { data: events, error } = await supabaseClient
+        .from('score_events')
+        .select('user_id, points')
+        .gte('created_at', startDate.toISOString());
+
+    if (error) throw error;
+
+    const totals = new Map();
+    (events || []).forEach(event => {
+        const userId = event.user_id;
+        const points = Number(event.points) || 0;
+        totals.set(userId, (totals.get(userId) || 0) + points);
+    });
+
+    return Array.from(totals.entries())
+        .map(([user_id, total_score]) => ({ user_id, total_score }))
+        .sort((a, b) => b.total_score - a.total_score);
+}
+
+async function loadGlobalLeaderboard() {
+    const { data: stats, error } = await supabaseClient
+        .from('user_stats')
+        .select('user_id, pseudo, friend_code, avatar_index, daily_total_points, multiplayer_total_score');
+
+    if (error) throw error;
+
+    return (stats || [])
+        .map(stat => ({
+            user_id: stat.user_id,
+            pseudo: stat.pseudo,
+            friend_code: stat.friend_code,
+            avatar_index: stat.avatar_index,
+            total_score: getLeaderboardScore(stat)
+        }))
+        .sort((a, b) => b.total_score - a.total_score);
+}
+
+async function loadStatsForUsers(userIds) {
+    if (!userIds.length) return new Map();
+
+    const { data: stats, error } = await supabaseClient
+        .from('user_stats')
+        .select('user_id, pseudo, friend_code, avatar_index')
+        .in('user_id', userIds);
+
+    if (error) throw error;
+
+    return new Map((stats || []).map(stat => [stat.user_id, stat]));
+}
+
 async function loadLeaderboard(type) {
     const container = document.getElementById('leaderboard-content');
     container.innerHTML = '<p style="text-align: center; opacity: 0.6;">Chargement...</p>';
 
     try {
-        // MODIFICATION ICI: order par 'daily_total_points' au lieu de 'daily_wins'
-        let query = supabaseClient
-            .from('user_stats')
-            .select('*')
-            .order('daily_total_points', { ascending: false }) 
-            .limit(50);
+        const isFriends = type === 'friends';
+        const isRecent = type === 'daily' || type === 'weekly';
+        let rows = [];
 
-        if (type === 'friends') {
+        if (isRecent) {
+            rows = await loadRecentLeaderboard(type);
+        } else {
+            rows = await loadGlobalLeaderboard();
+        }
+
+        if (isFriends) {
             if (!currentUser) {
                 container.innerHTML = '<p style="text-align: center; opacity: 0.6;">Connectez-vous pour voir le classement amis.</p>';
                 return;
             }
-            
-            // 1. Get Friend IDs
+
             const { data: friendships } = await supabaseClient
                 .from('friends')
-                .select('*')
+                .select('user_id_1, user_id_2')
                 .or(`user_id_1.eq.${currentUser.id},user_id_2.eq.${currentUser.id}`)
                 .eq('status', 'accepted');
-                
-            const friendIds = (friendships || []).map(f => f.user_id_1 === currentUser.id ? f.user_id_2 : f.user_id_1);
-            friendIds.push(currentUser.id); // Include self
 
-            // 2. Filter Query
-            // MODIFICATION ICI: order par 'daily_total_points'
-            query = supabaseClient
-                .from('user_stats')
-                .select('*')
-                .in('user_id', friendIds)
-                .order('daily_total_points', { ascending: false });
+            const friendIds = (friendships || []).map(f => f.user_id_1 === currentUser.id ? f.user_id_2 : f.user_id_1);
+            friendIds.push(currentUser.id);
+            rows = rows.filter(row => friendIds.includes(row.user_id));
         }
 
-        const { data: stats, error } = await query;
+        if (isRecent) {
+            const statsMap = await loadStatsForUsers(rows.map(row => row.user_id));
+            rows = rows.map(row => ({
+                ...row,
+                ...statsMap.get(row.user_id)
+            }));
+        }
 
-        if (error) throw error;
-
-        if (!stats || stats.length === 0) {
+        if (!rows || rows.length === 0) {
             container.innerHTML = '<p style="text-align: center; opacity: 0.6;">Aucune donnée.</p>';
             return;
         }
 
         let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">';
         
-        html += '<tr style="border-bottom: 1px solid #ccc; text-align: left;"><th style="padding: 5px;">#</th><th style="padding: 5px;">Joueur</th><th style="padding: 5px;">Victoires Jour</th><th style="padding: 5px;">Points Jour</th><th style="padding: 5px;">Victoires Multi</th></tr>';
+        const scoreTitle = type === 'daily' ? 'Points du jour' : type === 'weekly' ? 'Points semaine' : 'Points global';
+        html += `<tr style="border-bottom: 1px solid #ccc; text-align: left;"><th style="padding: 5px;">#</th><th style="padding: 5px;">Joueur</th><th style="padding: 5px;">${scoreTitle}</th></tr>`;
         
-        stats.forEach((s, index) => {
-            const isMe = currentUser && s.user_id === currentUser.id;
+        rows.slice(0, 50).forEach((row, index) => {
+            const isMe = currentUser && row.user_id === currentUser.id;
             const style = isMe ? 'background: rgba(0, 255, 0, 0.1); font-weight: bold;' : '';
-            // Use pseudo if available, otherwise fallback to friend_code
-            const name = s.pseudo ? s.pseudo : (s.friend_code ? `Joueur ${s.friend_code}` : 'Inconnu');
+            const name = row.pseudo ? row.pseudo : (row.friend_code ? `Joueur ${row.friend_code}` : 'Inconnu');
             
             html += `<tr style="${style} border-bottom: 1px solid var(--tile-border);">
                 <td style="padding: 8px;">${index + 1}</td>
                 <td style="padding: 8px;">${name}</td>
-                <td style="padding: 8px;">${s.daily_wins || 0}</td>
-                <td style="padding: 8px; font-weight: bold; color: var(--correct-color);">${s.daily_total_points || 0} pts</td>
-                <td style="padding: 8px;">${s.multiplayer_wins || 0}</td>
+                <td style="padding: 8px; font-weight: bold; color: var(--correct-color);">${row.total_score || 0} pts</td>
             </tr>`;
         });
         html += '</table>';
@@ -868,7 +963,11 @@ async function loadLeaderboard(type) {
 
     } catch (e) {
         console.error(e);
-        container.innerHTML = '<p style="text-align: center; color: var(--absent);">Erreur chargement.</p>';
+        if (type === 'daily' || type === 'weekly') {
+            container.innerHTML = '<p style="text-align: center; color: var(--absent);">Le classement journalier/hebdo nécessite la table <strong>score_events</strong> sur Supabase.</p>';
+        } else {
+            container.innerHTML = '<p style="text-align: center; color: var(--absent);">Erreur chargement.</p>';
+        }
     }
 }
 

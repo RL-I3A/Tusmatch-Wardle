@@ -2227,6 +2227,10 @@ async function updateMultiplayerStats(isWinner, totalScore, roundsPlayed) {
                 updated_at: new Date().toISOString()
             })
             .eq('user_id', userId);
+
+        if (totalScore > 0 && typeof window.recordScoreEvent === 'function') {
+            await window.recordScoreEvent(totalScore, 'multiplayer');
+        }
             
         console.log("Multiplayer Stats Updated!");
 
