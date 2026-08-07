@@ -972,15 +972,28 @@ body.claire .key.absent {
 
     /* Adjust Top Buttons */
     .theme-switch {
-        top: 10px;
-        right: 10px;
+        /* No top/right here: theme-switch is a flex child of .top-actions-shell,
+           which already positions it. Adding top/right on a position:relative
+           element only pushed it out of alignment with the other icons. */
         padding: 6px 10px;
         font-size: 0.75rem;
     }
 
-    .back-btn, .lobby-back-btn {
+    .lobby-back-btn {
         top: 10px;
         left: 10px;
+        padding: 6px 10px;
+        font-size: 0.75rem;
+    }
+
+    .back-btn {
+        /* Keep it on the right, below .top-actions-shell, and explicitly
+           clear left so it can't be stretched full-width when combined
+           with the earlier right:10px rule (left+right both set + width:auto
+           makes the element fill the gap between them). */
+        top: 58px;
+        right: 10px;
+        left: auto;
         padding: 6px 10px;
         font-size: 0.75rem;
     }

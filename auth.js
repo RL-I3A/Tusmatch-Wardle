@@ -817,6 +817,26 @@ function getLocalWeekStart(date = new Date()) {
     return start;
 }
 
+function getTimeUntilReset(period) {
+    const now = new Date();
+    let target;
+
+    if (period === 'daily') {
+        target = getLocalDayStart(now);
+        target.setDate(target.getDate() + 1);
+    } else if (period === 'weekly') {
+        target = getLocalWeekStart(now);
+        target.setDate(target.getDate() + 7);
+    } else {
+        return null;
+    }
+
+    const diffMs = target - now;
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${String(minutes).padStart(2, '0')}min`;
+}
+
 function getLeaderboardScore(stats) {
     return (stats.daily_total_points || 0) + (stats.multiplayer_total_score || 0);
 }
@@ -863,6 +883,9 @@ function injectLeaderboardModal() {
                 <button id="tab-leaderboard-weekly" class="tab-btn" onclick="switchLeaderboardTab('weekly')">Semaine</button>
                 <button id="tab-leaderboard-friends" class="tab-btn" onclick="switchLeaderboardTab('friends')">Amis</button>
             </div>
+
+            <!-- RESET COUNTDOWN (shown only for Jour / Semaine) -->
+            <div id="leaderboard-reset-info" class="hidden" style="text-align: center; font-size: 0.8rem; opacity: 0.7; margin-bottom: 10px;"></div>
 
             <!-- CONTENT -->
             <div id="leaderboard-content" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--tile-border); border-radius: 8px; padding: 10px;">
@@ -940,9 +963,23 @@ async function loadStatsForUsers(userIds) {
     return new Map((stats || []).map(stat => [stat.user_id, stat]));
 }
 
+function updateLeaderboardResetInfo(type) {
+    const resetInfo = document.getElementById('leaderboard-reset-info');
+    if (!resetInfo) return;
+
+    if (type === 'daily' || type === 'weekly') {
+        const label = type === 'daily' ? 'journalier' : 'hebdomadaire';
+        resetInfo.textContent = `Reset ${label} dans ${getTimeUntilReset(type)}`;
+        resetInfo.classList.remove('hidden');
+    } else {
+        resetInfo.classList.add('hidden');
+    }
+}
+
 async function loadLeaderboard(type) {
     const container = document.getElementById('leaderboard-content');
     container.innerHTML = '<p style="text-align: center; opacity: 0.6;">Chargement...</p>';
+    updateLeaderboardResetInfo(type);
 
     try {
         const isFriends = type === 'friends';
