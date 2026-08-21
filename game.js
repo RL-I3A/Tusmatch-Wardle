@@ -16,6 +16,7 @@ let currentGuess = [];
 let guesses = [];
 let isGameOver = false;
 let currentHints = [];
+let activeIndex = null; // Case sélectionnée par clic : la prochaine lettre tapée ira ici
 let hasPlayedDailyToday = false; // Track if daily game already played
 let isUpdatingDailyStats = false;
 const gameUrlParams = new URLSearchParams(window.location.search);
@@ -117,7 +118,13 @@ window.testNextDay = function(days = 1) {
 
 async function checkDailyStatus() {
     const { data: { session } } = await window.supabaseClient.auth.getSession();
-    if (!session || !session.user) return;
+    if (!session || !session.user) {
+        if (typeof window.showDebugPanel === 'function') {
+            const fallbackId = window.getCachedUserId ? window.getCachedUserId() : null;
+            window.showDebugPanel('Session absente au chargement', 'Aucune session active : les stats ne pourront pas être sauvegardées pour cette partie.');
+        }
+        return;
+    }
 
     try {
         // MODIF : on sélectionne aussi les colonnes de sauvegarde en cours
@@ -129,6 +136,9 @@ async function checkDailyStatus() {
 
         if (error && error.code !== 'PGRST116') {
             console.error("Error checking daily status:", error);
+            if (typeof window.showDebugPanel === 'function') {
+                window.showDebugPanel('Erreur lecture statut journalier', error);
+            }
             return;
         }
 
@@ -170,18 +180,34 @@ async function saveDailyProgressToDB(currentGuesses) {
     if (!isDailyMode || isMultiplayerMode) return;
 
     const { data: { session } } = await window.supabaseClient.auth.getSession();
-    if (!session || !session.user) return;
+    if (!session || !session.user) {
+        if (typeof window.showDebugPanel === 'function') {
+            const fallbackId = window.getCachedUserId ? window.getCachedUserId() : null;
+            window.showDebugPanel('Session absente (sauvegarde en cours)', 'Impossible de sauvegarder la progression : aucune session active.');
+        }
+        return;
+    }
 
     try {
-        await window.supabaseClient
+        const { error } = await window.supabaseClient
             .from('user_stats')
             .update({
                 daily_current_guesses: JSON.stringify(currentGuesses),
                 daily_current_date: getLocalDateString()
             })
             .eq('user_id', session.user.id);
+
+        if (error) {
+            console.error("Erreur sauvegarde guesses DB:", error);
+            if (typeof window.showDebugPanel === 'function') {
+                window.showDebugPanel('Erreur sauvegarde progression', error);
+            }
+        }
     } catch (e) {
         console.error("Erreur sauvegarde guesses DB:", e);
+        if (typeof window.showDebugPanel === 'function') {
+            window.showDebugPanel('Exception sauvegarde progression', e);
+        }
     }
 }
 
@@ -307,6 +333,7 @@ async function initGame(customWord = null) {
     
     // Reset variables
     currentGuess = Array(wordLength).fill("");
+    activeIndex = null; // Réinitialise le curseur cliqué pour la nouvelle ligne
     guesses = [];
     isGameOver = false;
     
@@ -397,23 +424,68 @@ document.getElementById("keyboard").addEventListener("click", (e) => {
     else handleInput(key);
 });
 
+// Clic sur une case de la ligne en cours : place le curseur à cet endroit pour
+// pouvoir écrire au milieu du mot. La 1ère lettre (index 0) reste figée/donnée.
+grid.addEventListener("click", (e) => {
+    if (isGameOver) return;
+
+    const tile = e.target.closest(".tile");
+    if (!tile) return;
+
+    const activeRow = grid.children[guesses.length];
+    if (!activeRow || tile.parentElement !== activeRow) return; // seule la ligne active est éditable
+
+    const index = Array.from(activeRow.children).indexOf(tile);
+    if (index <= 0) return; // la 1ère lettre ne se modifie pas
+
+    activeIndex = index;
+    updateGrid();
+});
+
 function handleInput(letter) {
-    const index = currentGuess.findIndex((val) => val === "");
-    if (index === -1) return;
+    // On écrit à l'endroit sélectionné par clic, sinon à la 1ère case vide (comportement classique)
+    let index = (activeIndex !== null && activeIndex > 0 && activeIndex < wordLength)
+        ? activeIndex
+        : currentGuess.findIndex((val) => val === "");
+    if (index === -1 || index === 0) return;
+
     currentGuess[index] = letter;
+
+    // Avance le curseur vers la prochaine case vide après celle-ci (en sautant la case 0)
+    let next = index + 1;
+    while (next < wordLength && currentGuess[next]) next++;
+    if (next >= wordLength) {
+        next = currentGuess.findIndex((val, i) => i > 0 && val === "");
+    }
+    activeIndex = next;
+
     updateGrid();
 }
 
 function handleBackspace() {
-    for (let i = wordLength - 1; i >= 0; i--) {
-        if (currentGuess[i]) {
-            currentGuess[i] = "";
-            // Supprimer temporairement le hint pour cette tentative
-            // Il sera restauré au prochain tour grâce à updateHintsFromHistory()
-            currentHints[i] = null; 
-            break;
+    let indexToClear = -1;
+
+    // Si une case précise est sélectionnée et contient une lettre, on efface celle-ci
+    if (activeIndex !== null && activeIndex > 0 && currentGuess[activeIndex]) {
+        indexToClear = activeIndex;
+    } else {
+        // Sinon, comportement classique : on efface la dernière lettre tapée
+        for (let i = wordLength - 1; i >= 1; i--) {
+            if (currentGuess[i]) {
+                indexToClear = i;
+                break;
+            }
         }
     }
+
+    if (indexToClear === -1) return;
+
+    currentGuess[indexToClear] = "";
+    // Supprimer temporairement le hint pour cette tentative
+    // Il sera restauré au prochain tour grâce à updateHintsFromHistory()
+    currentHints[indexToClear] = null;
+    activeIndex = indexToClear; // le curseur reste sur la case qu'on vient de vider
+
     updateGrid();
 }
 
@@ -496,6 +568,9 @@ function updateGrid() {
         } else {
             tiles[i].classList.remove("start-tile");
         }
+
+        // Repère visuel : case sélectionnée par clic (prochaine lettre écrite ici)
+        tiles[i].classList.toggle("cursor-selected", i === activeIndex);
     }
 
     // Envoyer l'état au multijoueur si actif
@@ -659,6 +734,7 @@ function submitGuess() {
                 updateHintsFromHistory();
 
                 currentGuess = Array(wordLength).fill("");
+                activeIndex = null; // Réinitialise le curseur cliqué pour la nouvelle ligne
                 // Only pre-fill the first letter if it's a hint
                 if (currentHints[0]) {
                     currentGuess[0] = currentHints[0];
@@ -1002,6 +1078,7 @@ window.restoreGuess = function(guessWord) {
     // Prepare next row
     if (!isGameOver) {
         currentGuess = Array(wordLength).fill("");
+        activeIndex = null; // Réinitialise le curseur cliqué pour la nouvelle ligne
         if (currentHints[0]) {
             currentGuess[0] = currentHints[0];
         }
@@ -1299,6 +1376,7 @@ function submitSkippedGuess() {
     } else {
         // Move to next line
         currentGuess = Array(wordLength).fill("");
+        activeIndex = null; // Réinitialise le curseur cliqué pour la nouvelle ligne
         // Restore hints?
         updateHintsFromHistory();
         if (currentHints[0]) currentGuess[0] = currentHints[0];
@@ -1351,11 +1429,20 @@ async function updateDailyStats(victory, guessCount, score = 0) {
 
     // Check if user is logged in
     const { data: { session } } = await window.supabaseClient.auth.getSession();
-    if (!session || !session.user) return;
+    if (!session || !session.user) {
+        if (typeof window.showDebugPanel === 'function') {
+            const fallbackId = window.getCachedUserId ? window.getCachedUserId() : null;
+            window.showDebugPanel('Session absente (fin de partie)', 'Partie terminée mais aucune session active : les stats ne seront PAS enregistrées.');
+        }
+        return;
+    }
 
     // Check if already played today
     if (hasPlayedDailyToday || isUpdatingDailyStats) {
         console.log("Stats not updated: Already played today.");
+        if (typeof window.showDebugPanel === 'function') {
+            window.showDebugPanel('Stats non mises à jour (déjà joué)', `hasPlayedDailyToday=${hasPlayedDailyToday}, isUpdatingDailyStats=${isUpdatingDailyStats}`);
+        }
         return;
     }
 
@@ -1388,6 +1475,9 @@ async function updateDailyStats(victory, guessCount, score = 0) {
         if (stats && stats.last_daily_date === today) {
             hasPlayedDailyToday = true;
             console.log("Stats not updated: Daily stats already credited in DB today.");
+            if (typeof window.showDebugPanel === 'function') {
+                window.showDebugPanel('Stats déjà créditées aujourd\'hui', `last_daily_date en base = ${stats.last_daily_date}, date locale calculée = ${today}`);
+            }
             return;
         }
 
@@ -1439,6 +1529,9 @@ async function updateDailyStats(victory, guessCount, score = 0) {
 
     } catch (e) {
         console.error("Error updating daily stats:", e);
+        if (typeof window.showDebugPanel === 'function') {
+            window.showDebugPanel('Erreur mise à jour stats journalières', e);
+        }
     } finally {
         isUpdatingDailyStats = false;
     }

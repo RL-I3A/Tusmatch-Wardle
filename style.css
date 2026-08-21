@@ -137,6 +137,9 @@ button {
     border: 1px solid var(--tile-border);
     font-weight: 600;
     font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: transform 0.2s;
     backdrop-filter: none;
 }
@@ -147,7 +150,7 @@ button {
     position: fixed; /* Changed from absolute to fixed */
     left: auto;
     right: 15px;
-    top: 64px;
+    top: 80px;
     padding: 8px 12px;
     border-radius: 8px;
     background: var(--tile-bg);
@@ -215,7 +218,7 @@ button {
     .back-btn {
         left: auto;
         right: 10px;
-        top: 58px;
+        top: 70px;
         padding: 8px 14px;
         z-index: 2100;
     }
@@ -274,6 +277,19 @@ h1 { font-size: 4rem; margin-bottom: 2rem; letter-spacing: 2px; }
 
 .btn-secondary { background: var(--present); }
 .btn-tertiary { background: var(--absent); }
+
+/* Bouton Infini : fond multicolore (dégradé), texte simple non-dégradé */
+.btn-infini {
+    background: linear-gradient(135deg, var(--correct) 0%, var(--start-tile) 50%, var(--present) 100%);
+    background-size: 200% 200%;
+    animation: infiniGradientShift 6s ease infinite;
+}
+
+@keyframes infiniGradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
 
 /* Bouton Désactivé (Coming Soon) */
 .btn-disabled {
@@ -450,6 +466,17 @@ body.claire .key.absent {
 
 .tile.blink {
     animation: blink 0.8s ease-in-out 3;
+}
+
+/* Case sélectionnée par clic : c'est ici que la prochaine lettre tapée sera placée */
+.tile.cursor-selected {
+    border-color: var(--present);
+    box-shadow: 0 0 0 2px var(--present);
+    cursor: pointer;
+}
+
+.tile.cursor-selected:not(.correct):not(.present):not(.absent) {
+    background: color-mix(in srgb, var(--present) 12%, var(--tile-bg));
 }
 
 @keyframes pop { 50% { transform: scale(1.1); } }
@@ -974,8 +1001,10 @@ body.claire .key.absent {
     .theme-switch {
         /* No top/right here: theme-switch is a flex child of .top-actions-shell,
            which already positions it. Adding top/right on a position:relative
-           element only pushed it out of alignment with the other icons. */
-        padding: 6px 10px;
+           element only pushed it out of alignment with the other icons.
+           No padding either: the button is icon-only now (see home.js), and
+           any asymmetric padding pushes the sun/moon icon off-center. */
+        padding: 0;
         font-size: 0.75rem;
     }
 
@@ -991,7 +1020,7 @@ body.claire .key.absent {
            clear left so it can't be stretched full-width when combined
            with the earlier right:10px rule (left+right both set + width:auto
            makes the element fill the gap between them). */
-        top: 58px;
+        top: 70px;
         right: 10px;
         left: auto;
         padding: 6px 10px;

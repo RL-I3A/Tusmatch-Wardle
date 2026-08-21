@@ -104,6 +104,9 @@ async function updateUserProfile(name, avatarIndex) {
         currentUser = data.user;
         
         // Sync Pseudo AND Avatar to User Stats (for Leaderboard/Friends)
+        // Non-critique : le profil (nom/avatar Google) est déjà mis à jour avec succès
+        // à ce stade, donc un échec ici ne doit jamais déclencher l'alerte d'erreur
+        // ci-dessous (d'où le try/catch imbriqué, y compris sur le repli).
         try {
             await supabaseClient
                 .from('user_stats')
@@ -111,10 +114,14 @@ async function updateUserProfile(name, avatarIndex) {
                 .eq('user_id', currentUser.id);
         } catch (e) {
             console.warn("Failed to sync avatar to DB, trying pseudo only...", e);
-            await supabaseClient
-                .from('user_stats')
-                .update({ pseudo: name })
-                .eq('user_id', currentUser.id);
+            try {
+                await supabaseClient
+                    .from('user_stats')
+                    .update({ pseudo: name })
+                    .eq('user_id', currentUser.id);
+            } catch (e2) {
+                console.warn("Failed to sync pseudo to DB (non-blocking):", e2);
+            }
         }
 
         // Save to Session Storage for Multiplayer
@@ -841,6 +848,232 @@ function getLeaderboardScore(stats) {
     return (stats.daily_total_points || 0) + (stats.multiplayer_total_score || 0);
 }
 
+// --- SEASONS (classement Global divisé par saison) ---
+// Repose sur deux tables Supabase optionnelles : `seasons` (dates de chaque
+// saison) et `season_frozen_scores` (totaux figés des saisons closes, utile
+// surtout pour la Saison 1 dont l'historique complet n'est pas forcément
+// dans score_events). Si ces tables n'existent pas encore, tout retombe
+// silencieusement sur l'ancien classement Global simple.
+
+function formatSeasonCountdown(diffMs) {
+    if (diffMs === null || diffMs === undefined || diffMs <= 0) return null;
+    const totalMinutes = Math.floor(diffMs / (1000 * 60));
+    const days = Math.floor(totalMinutes / (60 * 24));
+    const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+    const minutes = totalMinutes % 60;
+    if (days > 0) return `${days}j ${hours}h`;
+    return `${hours}h ${String(minutes).padStart(2, '0')}min`;
+}
+
+async function loadSeasonsConfig() {
+    const { data, error } = await supabaseClient
+        .from('seasons')
+        .select('id, number, label, starts_at, ends_at')
+        .order('number', { ascending: true });
+    if (error) throw error;
+    return data || [];
+}
+
+function getSeasonPhase(season, now) {
+    const start = season.starts_at ? new Date(season.starts_at) : null;
+    const end = season.ends_at ? new Date(season.ends_at) : null;
+    if (start && now < start) return 'upcoming';
+    if (end && now >= end) return 'closed';
+    return 'active';
+}
+
+async function loadSeasonLiveTotals(startsAt, endsAt) {
+    let query = supabaseClient.from('score_events').select('user_id, points');
+    if (startsAt) query = query.gte('created_at', startsAt);
+    if (endsAt) query = query.lt('created_at', endsAt);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const totals = new Map();
+    (data || []).forEach(event => {
+        totals.set(event.user_id, (totals.get(event.user_id) || 0) + (Number(event.points) || 0));
+    });
+    return totals;
+}
+
+async function loadSeasonFrozenTotals(seasonId) {
+    const { data, error } = await supabaseClient
+        .from('season_frozen_scores')
+        .select('user_id, total_points')
+        .eq('season_id', seasonId);
+    if (error) throw error;
+
+    const totals = new Map();
+    (data || []).forEach(row => totals.set(row.user_id, Number(row.total_points) || 0));
+    return totals;
+}
+
+// Construit les données du classement par saison, ou renvoie { legacy: true }
+// si aucune saison n'est encore close (on garde alors l'ancien affichage,
+// avec juste un bandeau "Saison X commence dans..." si une saison est prévue).
+async function buildSeasonalLeaderboard() {
+    const seasons = await loadSeasonsConfig();
+    if (!seasons.length) return null;
+
+    const now = new Date();
+    const withPhase = seasons.map(s => ({ ...s, phase: getSeasonPhase(s, now) }));
+
+    const currentSeason = withPhase.find(s => s.phase === 'active') || null;
+    const upcomingSeason = withPhase.find(s => s.phase === 'upcoming') || null;
+    const closedSeasons = withPhase.filter(s => s.phase === 'closed');
+
+    if (closedSeasons.length === 0) {
+        return { legacy: true, currentSeason, upcomingSeason };
+    }
+
+    // Totaux par saison close : figés si disponibles, sinon recalculés depuis score_events
+    const seasonTotalsList = [];
+    for (const season of closedSeasons) {
+        let totals = await loadSeasonFrozenTotals(season.id);
+        if (totals.size === 0) {
+            totals = await loadSeasonLiveTotals(season.starts_at, season.ends_at);
+        }
+        seasonTotalsList.push({ season, totals });
+    }
+
+    // Saison en cours : toujours calculée en direct depuis score_events
+    const currentTotals = currentSeason
+        ? await loadSeasonLiveTotals(currentSeason.starts_at, currentSeason.ends_at)
+        : new Map();
+
+    const { data: stats, error } = await supabaseClient
+        .from('user_stats')
+        .select('user_id, pseudo, friend_code, avatar_index');
+    if (error) throw error;
+
+    const rows = (stats || []).map(stat => {
+        const seasonScores = {};
+        let total = 0;
+
+        seasonTotalsList.forEach(({ season, totals }) => {
+            const pts = totals.get(stat.user_id) || 0;
+            seasonScores[season.number] = pts;
+            total += pts;
+        });
+
+        const currentSeasonScore = currentTotals.get(stat.user_id) || 0;
+        total += currentSeasonScore;
+
+        return {
+            user_id: stat.user_id,
+            pseudo: stat.pseudo,
+            friend_code: stat.friend_code,
+            avatar_index: stat.avatar_index,
+            seasonScores,
+            currentSeasonScore,
+            total_score: total
+        };
+    });
+
+    // Classement basé sur la saison en cours (tout le monde repart de 0),
+    // le total départage en cas d'égalité.
+    rows.sort((a, b) => (b.currentSeasonScore - a.currentSeasonScore) || (b.total_score - a.total_score));
+
+    return { legacy: false, closedSeasons, currentSeason, upcomingSeason, rows };
+}
+
+function updateSeasonCountdownBanner(currentSeason, upcomingSeason) {
+    const resetInfo = document.getElementById('leaderboard-reset-info');
+    if (!resetInfo) return;
+
+    if (upcomingSeason && upcomingSeason.starts_at) {
+        const countdown = formatSeasonCountdown(new Date(upcomingSeason.starts_at) - new Date());
+        resetInfo.textContent = countdown
+            ? `🎉 ${upcomingSeason.label} commence dans ${countdown} — les scores repartiront à 0 !`
+            : `🎉 ${upcomingSeason.label} vient de commencer !`;
+        resetInfo.classList.remove('hidden');
+        return;
+    }
+
+    if (currentSeason && currentSeason.ends_at) {
+        const countdown = formatSeasonCountdown(new Date(currentSeason.ends_at) - new Date());
+        resetInfo.textContent = countdown
+            ? `${currentSeason.label} se termine dans ${countdown}`
+            : `${currentSeason.label} est terminée`;
+        resetInfo.classList.remove('hidden');
+        return;
+    }
+
+    resetInfo.classList.add('hidden');
+}
+
+function renderSimpleLeaderboardTable(rows, scoreTitle) {
+    const container = document.getElementById('leaderboard-content');
+
+    if (!rows || rows.length === 0) {
+        container.innerHTML = '<p style="text-align: center; opacity: 0.6;">Aucune donnée.</p>';
+        return;
+    }
+
+    let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">';
+    html += `<tr style="border-bottom: 1px solid #ccc; text-align: left;"><th style="padding: 5px;">#</th><th style="padding: 5px;">Joueur</th><th style="padding: 5px;">${scoreTitle}</th></tr>`;
+
+    rows.slice(0, 50).forEach((row, index) => {
+        const isMe = currentUser && row.user_id === currentUser.id;
+        const style = isMe ? 'background: rgba(0, 255, 0, 0.1); font-weight: bold;' : '';
+        const name = row.pseudo ? row.pseudo : (row.friend_code ? `Joueur ${row.friend_code}` : 'Inconnu');
+
+        html += `<tr style="${style} border-bottom: 1px solid var(--tile-border);">
+            <td style="padding: 8px;">${index + 1}</td>
+            <td style="padding: 8px;">${name}</td>
+            <td style="padding: 8px; font-weight: bold; color: var(--correct-color);">${row.total_score || 0} pts</td>
+        </tr>`;
+    });
+    html += '</table>';
+
+    container.innerHTML = html;
+}
+
+function renderSeasonalLeaderboardTable(data) {
+    const container = document.getElementById('leaderboard-content');
+    const { closedSeasons, currentSeason, rows } = data;
+
+    if (!rows || rows.length === 0) {
+        container.innerHTML = '<p style="text-align: center; opacity: 0.6;">Aucune donnée.</p>';
+        return;
+    }
+
+    let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.82rem;">';
+    html += '<tr style="border-bottom: 1px solid #ccc; text-align: left;"><th style="padding: 5px;">#</th><th style="padding: 5px;">Joueur</th>';
+    closedSeasons.forEach(season => {
+        html += `<th style="padding: 5px; opacity: 0.5; font-weight: normal;" title="Saison terminée">${season.label}</th>`;
+    });
+    if (currentSeason) {
+        html += `<th style="padding: 5px; color: var(--correct);">${currentSeason.label}</th>`;
+    }
+    html += '<th style="padding: 5px;">Total</th></tr>';
+
+    rows.slice(0, 50).forEach((row, index) => {
+        const isMe = currentUser && row.user_id === currentUser.id;
+        const style = isMe ? 'background: rgba(0, 255, 0, 0.1); font-weight: bold;' : '';
+        const name = row.pseudo ? row.pseudo : (row.friend_code ? `Joueur ${row.friend_code}` : 'Inconnu');
+
+        html += `<tr style="${style} border-bottom: 1px solid var(--tile-border);">
+            <td style="padding: 8px;">${index + 1}</td>
+            <td style="padding: 8px;">${name}</td>`;
+
+        closedSeasons.forEach(season => {
+            const pts = row.seasonScores[season.number] || 0;
+            html += `<td style="padding: 8px; opacity: 0.45;">${pts}</td>`;
+        });
+
+        if (currentSeason) {
+            html += `<td style="padding: 8px; font-weight: bold; color: var(--correct);">${row.currentSeasonScore}</td>`;
+        }
+
+        html += `<td style="padding: 8px; font-weight: bold;">${row.total_score} pts</td></tr>`;
+    });
+    html += '</table>';
+
+    container.innerHTML = html;
+}
+
 async function recordScoreEvent(points, source) {
     const score = Number(points) || 0;
     if (score <= 0) return;
@@ -981,6 +1214,37 @@ async function loadLeaderboard(type) {
     container.innerHTML = '<p style="text-align: center; opacity: 0.6;">Chargement...</p>';
     updateLeaderboardResetInfo(type);
 
+    // Onglet Global : classement divisé par saison si la table `seasons` existe,
+    // sinon on retombe silencieusement sur l'ancien classement global simple.
+    // Les onglets Jour / Semaine / Amis ne sont pas concernés par ce bloc.
+    if (type === 'global') {
+        try {
+            const seasonal = await buildSeasonalLeaderboard();
+
+            if (seasonal && !seasonal.legacy) {
+                updateSeasonCountdownBanner(seasonal.currentSeason, null);
+                renderSeasonalLeaderboardTable(seasonal);
+                return;
+            }
+
+            if (seasonal && seasonal.upcomingSeason) {
+                updateSeasonCountdownBanner(null, seasonal.upcomingSeason);
+            }
+        } catch (e) {
+            // Table `seasons` pas encore créée : comportement classique inchangé.
+            console.warn('Classement par saison indisponible, classement global classique utilisé.', e);
+        }
+
+        try {
+            const rows = await loadGlobalLeaderboard();
+            renderSimpleLeaderboardTable(rows, 'Points global');
+        } catch (e) {
+            console.error(e);
+            container.innerHTML = '<p style="text-align: center; color: var(--absent);">Erreur chargement.</p>';
+        }
+        return;
+    }
+
     try {
         const isFriends = type === 'friends';
         const isRecent = type === 'daily' || type === 'weekly';
@@ -1017,30 +1281,8 @@ async function loadLeaderboard(type) {
             }));
         }
 
-        if (!rows || rows.length === 0) {
-            container.innerHTML = '<p style="text-align: center; opacity: 0.6;">Aucune donnée.</p>';
-            return;
-        }
-
-        let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">';
-        
         const scoreTitle = type === 'daily' ? 'Points du jour' : type === 'weekly' ? 'Points semaine' : 'Points global';
-        html += `<tr style="border-bottom: 1px solid #ccc; text-align: left;"><th style="padding: 5px;">#</th><th style="padding: 5px;">Joueur</th><th style="padding: 5px;">${scoreTitle}</th></tr>`;
-        
-        rows.slice(0, 50).forEach((row, index) => {
-            const isMe = currentUser && row.user_id === currentUser.id;
-            const style = isMe ? 'background: rgba(0, 255, 0, 0.1); font-weight: bold;' : '';
-            const name = row.pseudo ? row.pseudo : (row.friend_code ? `Joueur ${row.friend_code}` : 'Inconnu');
-            
-            html += `<tr style="${style} border-bottom: 1px solid var(--tile-border);">
-                <td style="padding: 8px;">${index + 1}</td>
-                <td style="padding: 8px;">${name}</td>
-                <td style="padding: 8px; font-weight: bold; color: var(--correct-color);">${row.total_score || 0} pts</td>
-            </tr>`;
-        });
-        html += '</table>';
-        
-        container.innerHTML = html;
+        renderSimpleLeaderboardTable(rows, scoreTitle);
 
     } catch (e) {
         console.error(e);
@@ -1109,6 +1351,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     const userProfileDiv = document.getElementById('user-profile-display');
     const leaderboardBtn = document.getElementById('leaderboardBtn');
 
+    // Not Logged In Warning (Daily Mode)
+    const notLoggedInModal = document.getElementById('not-logged-in-modal');
+    const btnLoginFromWarning = document.getElementById('btn-login-from-warning');
+    const btnPlayAnyway = document.getElementById('btn-play-anyway');
+    if (btnLoginFromWarning) {
+        btnLoginFromWarning.addEventListener('click', signInWithGoogle);
+    }
+    if (btnPlayAnyway) {
+        btnPlayAnyway.addEventListener('click', () => {
+            notLoggedInModal.classList.add('hidden');
+        });
+    }
+    if (notLoggedInModal) {
+        notLoggedInModal.addEventListener('click', (e) => {
+            if (e.target === notLoggedInModal) notLoggedInModal.classList.add('hidden');
+        });
+    }
+
     // Listeners
     if (loginBtn) loginBtn.addEventListener('click', signInWithGoogle);
     if (logoutBtn) logoutBtn.addEventListener('click', signOut);
@@ -1135,12 +1395,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Check Session
     const { data: { session } } = await supabaseClient.auth.getSession();
-    
+
     if (session) {
         currentUser = session.user;
         updateUI(currentUser);
     } else {
         updateUI(null);
+
+        // Mode "Mot du Jour" sans connexion : on prévient (à chaque partie) que
+        // le score ne sera pas enregistré, sans empêcher de jouer.
+        const authUrlParams = new URLSearchParams(window.location.search);
+        const authGameMode = authUrlParams.get('mode') || 'daily';
+        const isDailyGamePage = window.location.pathname.endsWith('game.html') && authGameMode === 'daily';
+        if (isDailyGamePage && notLoggedInModal) {
+            notLoggedInModal.classList.remove('hidden');
+        }
     }
 
     // Listen for auth changes

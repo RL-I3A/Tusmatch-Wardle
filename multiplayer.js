@@ -13,6 +13,7 @@ let currentChronoDuration = 30; // Default duration
 let maxRounds = 'inf'; // 'inf' or number
 let currentRound = 1;
 let lastRoundVictory = false; // Track local victory state for round end display
+let isInfiniSoloMode = false; // Mode Infini : match privé joué seul, pas d'adversaires à afficher
 
 // --- DOM ELEMENTS ---
 const lobbyOverlay = document.getElementById('lobby-overlay');
@@ -44,18 +45,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const urlParams = new URLSearchParams(window.location.search);
     const mode = urlParams.get('mode');
+    // "Infini" = private match played solo, launched automatically (no lobby, no invite needed)
+    const isInfiniSolo = urlParams.get('solo') === 'infini';
+    isInfiniSoloMode = isInfiniSolo;
 
-    // Auto-rejoin Session
+    // Auto-rejoin Session (skipped for Infini: it always starts a fresh endless room)
     const savedRoom = sessionStorage.getItem('tusmatch_room');
     const savedPlayerId = sessionStorage.getItem('tusmatch_player_id');
-    if (savedRoom && savedPlayerId && mode === 'private') {
+    if (savedRoom && savedPlayerId && mode === 'private' && !isInfiniSolo) {
         rejoinSession(savedRoom, savedPlayerId);
     }
 
     if (mode === 'private') {
-        // Afficher le lobby
-        lobbyOverlay.classList.remove('hidden');
-        
+        // Afficher le lobby (sauf en mode Infini : on saute directement au jeu)
+        if (!isInfiniSolo) {
+            lobbyOverlay.classList.remove('hidden');
+        }
+
         // Event Listeners du Lobby
         document.getElementById('btn-create-game').addEventListener('click', createGame);
         document.getElementById('btn-join-game').addEventListener('click', () => {
@@ -202,6 +208,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Initialize Chat
         initChat();
+
+        // Mode Infini : on crée et lance la partie solo automatiquement
+        if (isInfiniSolo) {
+            autoStartInfiniSolo();
+        }
     }
 });
 
@@ -232,6 +243,36 @@ function setupShareButtons(linkBtnId, codeBtnId) {
             }
         });
     }
+}
+
+// --- MODE INFINI (Match Privé Solo) ---
+// Réutilise entièrement la logique du match privé : on crée une salle dont on est
+// seul joueur, en mode "Libre" avec un nombre de manches illimité (maxRounds = 'inf'),
+// puis on la lance immédiatement. Le passage automatique au mot suivant à la fin de
+// chaque manche est déjà géré par triggerMultiplayerRestart (voir plus bas).
+async function autoStartInfiniSolo() {
+    selectedGameMode = 'libre';
+    maxRounds = 'inf';
+
+    // Refléter le mode dans l'UI du lobby (au cas où elle redevienne visible)
+    const modeOptions = document.querySelectorAll('.mode-option');
+    modeOptions.forEach(opt => opt.classList.toggle('selected', opt.dataset.mode === 'libre'));
+
+    // Pré-remplir un pseudo si besoin (le champ existe même si le lobby est caché)
+    const pseudoInput = document.getElementById('player-pseudo');
+    if (pseudoInput && !pseudoInput.value.trim()) {
+        const savedPseudo = sessionStorage.getItem('tusmatch_pseudo');
+        pseudoInput.value = savedPseudo || 'Joueur';
+    }
+
+    await createGame();
+
+    // Petite pause pour laisser le temps au canal temps réel de bien s'abonner
+    // (dans le flux manuel, le délai humain entre "Créer" et "Lancer" suffit
+    // toujours ; ici tout va trop vite pour ça, donc on le simule).
+    await new Promise(resolve => setTimeout(resolve, 700));
+
+    await launchGame();
 }
 
 // --- LOGIQUE LOBBY ---
@@ -330,10 +371,12 @@ async function createGame() {
         
         // 5. Afficher la salle d'attente
         showWaitingRoom(code);
-        
+
         // Rétablir le bouton (même s'il est caché ensuite)
         btn.disabled = false;
         btn.textContent = originalText;
+
+        return motWithMode;
 
     } catch (e) {
         console.error("Erreur createGame:", e);
@@ -772,8 +815,15 @@ function startGameMultiplayer(mot) {
     if (btnToggle) btnToggle.classList.remove('hidden');
 
     const btnToggleOpponents = document.getElementById('btn-toggle-opponents');
-    if (btnToggleOpponents) btnToggleOpponents.classList.remove('hidden');
-    
+    if (btnToggleOpponents) {
+        // En mode Infini (solo), il n'y a pas d'adversaires à afficher : on garde le bouton caché
+        if (isInfiniSoloMode) {
+            btnToggleOpponents.classList.add('hidden');
+        } else {
+            btnToggleOpponents.classList.remove('hidden');
+        }
+    }
+
     // 9. Update list immediately
     if (currentRoomCode) {
         supabaseClient.from('parties').select('id').eq('code', currentRoomCode).single()
