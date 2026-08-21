@@ -312,7 +312,22 @@ function injectProfileModal() {
                 <!-- Right: Stats -->
                 <div style="flex: 1; min-width: 200px; text-align: left; background: rgba(0,0,0,0.05); padding: 15px; border-radius: 10px;">
                     <h4 style="margin-bottom: 10px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">Statistiques</h4>
-                    
+
+                    <div class="win-stars-row">
+                        <div class="win-star-item" title="Nombre de fois n°1 du classement du jour">
+                            <div id="win-star-day" class="win-star win-star-bronze" data-digits="1"><span>0</span></div>
+                            <div class="win-star-label">Jours<br>gagnés</div>
+                        </div>
+                        <div class="win-star-item" title="Nombre de fois n°1 du classement de la semaine">
+                            <div id="win-star-week" class="win-star win-star-silver" data-digits="1"><span>0</span></div>
+                            <div class="win-star-label">Semaines<br>gagnées</div>
+                        </div>
+                        <div class="win-star-item" title="Nombre de fois n°1 d'une saison">
+                            <div id="win-star-season" class="win-star win-star-gold" data-digits="1"><span>0</span></div>
+                            <div class="win-star-label">Saisons<br>gagnées</div>
+                        </div>
+                    </div>
+
                     <div style="margin-bottom: 15px;">
                         <strong style="font-size: 0.9rem; color: var(--correct);">Mot du Jour</strong>
                         <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 5px;">
@@ -387,6 +402,131 @@ function injectProfileModal() {
     });
 }
 
+// --- PUBLIC PROFILE (lecture seule, depuis le classement) ---
+
+function injectPublicProfileModal() {
+    if (document.getElementById('public-profile-modal')) return;
+
+    const modalHtml = `
+    <div id="public-profile-modal" class="custom-modal-overlay hidden" style="z-index: 4500;">
+        <div class="custom-modal-box" style="max-width: 380px;">
+            <button id="close-public-profile" class="rules-close-btn">×</button>
+
+            <div style="text-align: center; margin-top: 10px;">
+                <img id="public-profile-avatar" src="assets/1.gif" style="width: 80px; height: 80px; border-radius: 50%; border: 2px solid var(--tile-border);">
+                <h3 id="public-profile-pseudo" style="margin-top: 10px;">Joueur</h3>
+            </div>
+
+            <div class="win-stars-row">
+                <div class="win-star-item" title="Nombre de fois n°1 du classement du jour">
+                    <div id="public-win-star-day" class="win-star win-star-bronze" data-digits="1"><span>0</span></div>
+                    <div class="win-star-label">Jours<br>gagnés</div>
+                </div>
+                <div class="win-star-item" title="Nombre de fois n°1 du classement de la semaine">
+                    <div id="public-win-star-week" class="win-star win-star-silver" data-digits="1"><span>0</span></div>
+                    <div class="win-star-label">Semaines<br>gagnées</div>
+                </div>
+                <div class="win-star-item" title="Nombre de fois n°1 d'une saison">
+                    <div id="public-win-star-season" class="win-star win-star-gold" data-digits="1"><span>0</span></div>
+                    <div class="win-star-label">Saisons<br>gagnées</div>
+                </div>
+            </div>
+
+            <div style="text-align: left; background: rgba(0,0,0,0.05); padding: 15px; border-radius: 10px;">
+                <div style="margin-bottom: 15px;">
+                    <strong style="font-size: 0.9rem; color: var(--correct);">Mot du Jour</strong>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 5px;">
+                        <span>Victoires:</span>
+                        <span id="public-stat-daily-wins">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                        <span>Taux de réussite:</span>
+                        <span id="public-stat-daily-rate">0%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                        <span>Série actuelle:</span>
+                        <span id="public-stat-daily-streak">0</span>
+                    </div>
+                </div>
+
+                <div>
+                    <strong style="font-size: 0.9rem; color: var(--present);">Match Privé</strong>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 5px;">
+                        <span>Victoires:</span>
+                        <span id="public-stat-multi-wins">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                        <span>Taux de réussite:</span>
+                        <span id="public-stat-multi-rate">0%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                        <span>Moyenne pts/manche:</span>
+                        <span id="public-stat-multi-avg">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button id="btn-close-public-profile" class="btn-cancel">Fermer</button>
+            </div>
+        </div>
+    </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    const close = () => document.getElementById('public-profile-modal').classList.add('hidden');
+    document.getElementById('close-public-profile').addEventListener('click', close);
+    document.getElementById('btn-close-public-profile').addEventListener('click', close);
+    document.getElementById('public-profile-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'public-profile-modal') close();
+    });
+}
+
+window.openPublicProfile = async function(userId) {
+    if (!userId) return;
+
+    injectPublicProfileModal();
+    const modal = document.getElementById('public-profile-modal');
+    modal.classList.remove('hidden');
+
+    document.getElementById('public-profile-pseudo').textContent = 'Chargement...';
+
+    try {
+        const { data, error } = await supabaseClient
+            .from('user_stats')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+
+        if (error || !data) {
+            document.getElementById('public-profile-pseudo').textContent = 'Joueur introuvable';
+            return;
+        }
+
+        const name = data.pseudo ? data.pseudo : (data.friend_code ? `Joueur ${data.friend_code}` : 'Joueur');
+        document.getElementById('public-profile-pseudo').textContent = name;
+        setAvatarImage(document.getElementById('public-profile-avatar'), `assets/${data.avatar_index || 1}.gif`);
+
+        document.getElementById('public-stat-daily-wins').textContent = data.daily_wins || 0;
+        const rate = data.daily_played > 0 ? Math.round((data.daily_wins / data.daily_played) * 100) : 0;
+        document.getElementById('public-stat-daily-rate').textContent = `${rate}%`;
+        document.getElementById('public-stat-daily-streak').textContent = data.daily_current_streak || 0;
+
+        document.getElementById('public-stat-multi-wins').textContent = data.multiplayer_wins || 0;
+        const multiRate = data.multiplayer_played > 0 ? Math.round((data.multiplayer_wins / data.multiplayer_played) * 100) : 0;
+        document.getElementById('public-stat-multi-rate').textContent = `${multiRate}%`;
+        const avg = data.multiplayer_rounds_played > 0 ? Math.round(data.multiplayer_total_score / data.multiplayer_rounds_played) : 0;
+        document.getElementById('public-stat-multi-avg').textContent = avg;
+
+        setWinStarValue('public-win-star-day', data.day_wins_count);
+        setWinStarValue('public-win-star-week', data.week_wins_count);
+        setWinStarValue('public-win-star-season', data.season_wins_count);
+    } catch (e) {
+        console.error('Erreur chargement profil public:', e);
+        document.getElementById('public-profile-pseudo').textContent = 'Erreur de chargement';
+    }
+};
+
 window.switchProfileTab = function(tab) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById(`tab-profile-${tab}`).classList.add('active');
@@ -420,6 +560,15 @@ function openProfileModal() {
     fetchUserStats(currentUser.id);
 
     modal.classList.remove('hidden');
+}
+
+function setWinStarValue(elId, value) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const n = Number(value) || 0;
+    const span = el.querySelector('span');
+    if (span) span.textContent = n;
+    el.dataset.digits = String(n).length;
 }
 
 async function fetchUserStats(userId) {
@@ -457,6 +606,11 @@ async function fetchUserStats(userId) {
             
             const avg = data.multiplayer_rounds_played > 0 ? Math.round(data.multiplayer_total_score / data.multiplayer_rounds_played) : 0;
             document.getElementById('stat-multi-avg').textContent = avg;
+
+            // Étoiles de victoires (jour / semaine / saison)
+            setWinStarValue('win-star-day', data.day_wins_count);
+            setWinStarValue('win-star-week', data.week_wins_count);
+            setWinStarValue('win-star-season', data.season_wins_count);
         } else {
             // Reset if no stats found
             document.getElementById('stat-daily-wins').textContent = '0';
@@ -466,6 +620,9 @@ async function fetchUserStats(userId) {
             document.getElementById('stat-multi-rate').textContent = '0%';
             document.getElementById('stat-multi-avg').textContent = '0';
             document.getElementById('my-friend-code').textContent = '------';
+            setWinStarValue('win-star-day', 0);
+            setWinStarValue('win-star-week', 0);
+            setWinStarValue('win-star-season', 0);
         }
 
     } catch (e) {
@@ -984,9 +1141,10 @@ function updateSeasonCountdownBanner(currentSeason, upcomingSeason) {
 
     if (upcomingSeason && upcomingSeason.starts_at) {
         const countdown = formatSeasonCountdown(new Date(upcomingSeason.starts_at) - new Date());
-        resetInfo.textContent = countdown
+        const mainLine = countdown
             ? `🎉 ${upcomingSeason.label} commence dans ${countdown} — les scores repartiront à 0 !`
             : `🎉 ${upcomingSeason.label} vient de commencer !`;
+        resetInfo.innerHTML = `${mainLine}<br><span style="opacity:0.8;">Les scores actuels ne sont pas perdus : ils restent consultables dans le classement.</span>`;
         resetInfo.classList.remove('hidden');
         return;
     }
@@ -1003,6 +1161,11 @@ function updateSeasonCountdownBanner(currentSeason, upcomingSeason) {
     resetInfo.classList.add('hidden');
 }
 
+function leaderboardNameCell(row) {
+    const name = row.pseudo ? row.pseudo : (row.friend_code ? `Joueur ${row.friend_code}` : 'Inconnu');
+    return `<span class="leaderboard-player-link" onclick="openPublicProfile('${row.user_id}')">${name}</span>`;
+}
+
 function renderSimpleLeaderboardTable(rows, scoreTitle) {
     const container = document.getElementById('leaderboard-content');
 
@@ -1017,11 +1180,10 @@ function renderSimpleLeaderboardTable(rows, scoreTitle) {
     rows.slice(0, 50).forEach((row, index) => {
         const isMe = currentUser && row.user_id === currentUser.id;
         const style = isMe ? 'background: rgba(0, 255, 0, 0.1); font-weight: bold;' : '';
-        const name = row.pseudo ? row.pseudo : (row.friend_code ? `Joueur ${row.friend_code}` : 'Inconnu');
 
         html += `<tr style="${style} border-bottom: 1px solid var(--tile-border);">
             <td style="padding: 8px;">${index + 1}</td>
-            <td style="padding: 8px;">${name}</td>
+            <td style="padding: 8px;">${leaderboardNameCell(row)}</td>
             <td style="padding: 8px; font-weight: bold; color: var(--correct-color);">${row.total_score || 0} pts</td>
         </tr>`;
     });
@@ -1052,11 +1214,10 @@ function renderSeasonalLeaderboardTable(data) {
     rows.slice(0, 50).forEach((row, index) => {
         const isMe = currentUser && row.user_id === currentUser.id;
         const style = isMe ? 'background: rgba(0, 255, 0, 0.1); font-weight: bold;' : '';
-        const name = row.pseudo ? row.pseudo : (row.friend_code ? `Joueur ${row.friend_code}` : 'Inconnu');
 
         html += `<tr style="${style} border-bottom: 1px solid var(--tile-border);">
             <td style="padding: 8px;">${index + 1}</td>
-            <td style="padding: 8px;">${name}</td>`;
+            <td style="padding: 8px;">${leaderboardNameCell(row)}</td>`;
 
         closedSeasons.forEach(season => {
             const pts = row.seasonScores[season.number] || 0;
@@ -1343,6 +1504,7 @@ function openInviteModal() {
 
 document.addEventListener('DOMContentLoaded', async () => {
     injectProfileModal();
+    injectPublicProfileModal();
     injectLeaderboardModal();
     initInviteModal();
 

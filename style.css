@@ -145,6 +145,69 @@ button {
 }
 .theme-switch:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.06); }
 
+/* Étoiles de victoires (profil) : jour = bronze, semaine = argent, saison = or */
+.win-stars-row {
+    display: flex;
+    justify-content: space-around;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.win-star-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.win-star-label {
+    font-size: 0.65rem;
+    line-height: 1.2;
+    opacity: 0.75;
+    margin-top: 4px;
+}
+
+.win-star {
+    width: 56px;
+    height: 56px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.25);
+}
+
+.win-star span {
+    font-weight: 800;
+    line-height: 1;
+    color: rgba(0, 0, 0, 0.6);
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
+    font-size: 1.15rem;
+    /* La taille se réduit au fur et à mesure que le nombre grandit (voir data-digits) */
+}
+
+/* 1-2 chiffres : taille par défaut ci-dessus. */
+.win-star[data-digits="3"] span { font-size: 0.9rem; }
+.win-star[data-digits="4"] span { font-size: 0.72rem; }
+.win-star[data-digits="5"] span,
+.win-star[data-digits="6"] span { font-size: 0.6rem; }
+
+.win-star-bronze { background: linear-gradient(145deg, #e3a06a, #a85a2a); }
+.win-star-silver { background: linear-gradient(145deg, #eef0f2, #9aa0a8); }
+.win-star-gold   { background: linear-gradient(145deg, #ffe27a, #d4a017); }
+
+/* Pseudo cliquable dans les classements -> ouvre le profil public (lecture seule) */
+.leaderboard-player-link {
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+    transition: opacity 0.15s;
+}
+.leaderboard-player-link:hover {
+    opacity: 0.7;
+}
+
 /* Bouton Retour: couleurs similaires aux tuiles, discret pour ne pas inciter au départ */
 .back-btn {
     position: fixed; /* Changed from absolute to fixed */
