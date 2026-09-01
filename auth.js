@@ -1,6 +1,9 @@
 // auth.js
 
 // --- VARIABLES ---
+// Étoile utilisée pour les compteurs de victoires (jour/semaine/saison) : jointures
+// arrondies via stroke-linejoin, pour un rendu plein/rond plutôt que fin et anguleux.
+const WIN_STAR_SVG = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,4 62,36 97,36 68,57 79,92 50,71 21,92 32,57 3,36 38,36"></polygon></svg>';
 let currentUser = null;
 let profileAvatarIndex = 1;
 const TOTAL_AVATARS = 12;
@@ -315,15 +318,15 @@ function injectProfileModal() {
 
                     <div class="win-stars-row">
                         <div class="win-star-item" title="Nombre de fois n°1 du classement du jour">
-                            <div id="win-star-day" class="win-star win-star-bronze" data-digits="1"><span>0</span></div>
+                            <div id="win-star-day" class="win-star win-star-bronze" data-digits="1">${WIN_STAR_SVG}<span>0</span></div>
                             <div class="win-star-label">Jours<br>gagnés</div>
                         </div>
                         <div class="win-star-item" title="Nombre de fois n°1 du classement de la semaine">
-                            <div id="win-star-week" class="win-star win-star-silver" data-digits="1"><span>0</span></div>
+                            <div id="win-star-week" class="win-star win-star-silver" data-digits="1">${WIN_STAR_SVG}<span>0</span></div>
                             <div class="win-star-label">Semaines<br>gagnées</div>
                         </div>
                         <div class="win-star-item" title="Nombre de fois n°1 d'une saison">
-                            <div id="win-star-season" class="win-star win-star-gold" data-digits="1"><span>0</span></div>
+                            <div id="win-star-season" class="win-star win-star-gold" data-digits="1">${WIN_STAR_SVG}<span>0</span></div>
                             <div class="win-star-label">Saisons<br>gagnées</div>
                         </div>
                     </div>
@@ -419,15 +422,15 @@ function injectPublicProfileModal() {
 
             <div class="win-stars-row">
                 <div class="win-star-item" title="Nombre de fois n°1 du classement du jour">
-                    <div id="public-win-star-day" class="win-star win-star-bronze" data-digits="1"><span>0</span></div>
+                    <div id="public-win-star-day" class="win-star win-star-bronze" data-digits="1">${WIN_STAR_SVG}<span>0</span></div>
                     <div class="win-star-label">Jours<br>gagnés</div>
                 </div>
                 <div class="win-star-item" title="Nombre de fois n°1 du classement de la semaine">
-                    <div id="public-win-star-week" class="win-star win-star-silver" data-digits="1"><span>0</span></div>
+                    <div id="public-win-star-week" class="win-star win-star-silver" data-digits="1">${WIN_STAR_SVG}<span>0</span></div>
                     <div class="win-star-label">Semaines<br>gagnées</div>
                 </div>
                 <div class="win-star-item" title="Nombre de fois n°1 d'une saison">
-                    <div id="public-win-star-season" class="win-star win-star-gold" data-digits="1"><span>0</span></div>
+                    <div id="public-win-star-season" class="win-star win-star-gold" data-digits="1">${WIN_STAR_SVG}<span>0</span></div>
                     <div class="win-star-label">Saisons<br>gagnées</div>
                 </div>
             </div>
@@ -836,9 +839,17 @@ window.inviteFriend = async function(friendId) {
 };
 
 // Listen for invites
+let inviteListenerInitialized = false;
+
 function initInviteListener() {
     if (!currentUser) return;
-    
+    // Ne s'abonner qu'une seule fois par session : rappeler .channel(...).subscribe()
+    // sur le même canal (ex: après un enregistrement de profil, qui redéclenche
+    // updateUI) fait planter le client Supabase avec une erreur "cannot add
+    // postgres_changes callbacks after subscribe()".
+    if (inviteListenerInitialized) return;
+    inviteListenerInitialized = true;
+
     // 1. Listen for incoming invites
     supabaseClient
         .channel('public:game_invites')

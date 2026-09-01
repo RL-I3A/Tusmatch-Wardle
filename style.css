@@ -168,21 +168,42 @@ button {
 }
 
 .win-star {
+    position: relative;
     width: 56px;
     height: 56px;
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
-    box-shadow: 0 3px 6px rgba(0,0,0,0.25);
+    /* L'ombre suit la forme réelle de l'étoile (pas un carré autour) */
+    filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.3));
 }
 
+.win-star svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.win-star svg polygon {
+    /* Jointures et pointes arrondies -> étoile pleine et ronde plutôt que fine/anguleuse */
+    stroke-linejoin: round;
+    stroke-width: 6;
+}
+
+.win-star-bronze svg polygon { fill: #cd9057; stroke: #8a5326; }
+.win-star-silver svg polygon { fill: #d8dce0; stroke: #8f959c; }
+.win-star-gold   svg polygon { fill: #f6cf55; stroke: #b8860b; }
+
 .win-star span {
+    position: relative;
+    z-index: 1;
     font-weight: 800;
     line-height: 1;
-    color: rgba(0, 0, 0, 0.6);
-    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
+    color: rgba(0, 0, 0, 0.62);
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.4);
     font-size: 1.15rem;
     /* La taille se réduit au fur et à mesure que le nombre grandit (voir data-digits) */
 }
@@ -192,10 +213,6 @@ button {
 .win-star[data-digits="4"] span { font-size: 0.72rem; }
 .win-star[data-digits="5"] span,
 .win-star[data-digits="6"] span { font-size: 0.6rem; }
-
-.win-star-bronze { background: linear-gradient(145deg, #e3a06a, #a85a2a); }
-.win-star-silver { background: linear-gradient(145deg, #eef0f2, #9aa0a8); }
-.win-star-gold   { background: linear-gradient(145deg, #ffe27a, #d4a017); }
 
 /* Pseudo cliquable dans les classements -> ouvre le profil public (lecture seule) */
 .leaderboard-player-link {
@@ -279,9 +296,11 @@ button {
 
 @media (max-width: 600px) {
     .back-btn {
-        left: auto;
-        right: 10px;
-        top: 70px;
+        /* Passé à gauche, au même niveau que .top-actions-shell (qui est à
+           droite) : les deux ne peuvent plus jamais se chevaucher. */
+        left: 10px;
+        right: auto;
+        top: 10px;
         padding: 8px 14px;
         z-index: 2100;
     }
@@ -1079,13 +1098,13 @@ body.claire .key.absent {
     }
 
     .back-btn {
-        /* Keep it on the right, below .top-actions-shell, and explicitly
-           clear left so it can't be stretched full-width when combined
-           with the earlier right:10px rule (left+right both set + width:auto
-           makes the element fill the gap between them). */
-        top: 70px;
-        right: 10px;
-        left: auto;
+        /* À gauche, au même niveau que .top-actions-shell (à droite) :
+           plus aucun chevauchement possible entre les deux groupes de boutons.
+           right explicitement clear pour ne pas étirer le bouton en pleine
+           largeur si left+right étaient tous les deux définis. */
+        top: 10px;
+        left: 10px;
+        right: auto;
         padding: 6px 10px;
         font-size: 0.75rem;
     }
