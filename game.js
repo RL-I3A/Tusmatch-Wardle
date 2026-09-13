@@ -19,6 +19,7 @@ let currentHints = [];
 let activeIndex = null; // Case sélectionnée par clic : la prochaine lettre tapée ira ici
 let hasPlayedDailyToday = false; // Track if daily game already played
 let isUpdatingDailyStats = false;
+let isSubmittingGuess = false; // Verrou anti double-validation (ex: double-appui sur Entrée pendant l'animation)
 const gameUrlParams = new URLSearchParams(window.location.search);
 const gameMode = gameUrlParams.get('mode') || 'daily';
 const isMultiplayerMode = gameMode === 'private';
@@ -490,6 +491,12 @@ function handleBackspace() {
 }
 
 function handleEnter() {
+    // Empêche une double-validation (ex: double-appui rapide sur Entrée) pendant
+    // que l'animation de la tentative précédente tourne encore : sans ce verrou,
+    // le même mot pouvait être soumis une 2e fois et colorer la ligne suivante
+    // sans jamais y afficher les lettres.
+    if (isSubmittingGuess) return;
+
     const guessString = currentGuess.join("");
     const filled = currentGuess.filter(Boolean).length;
     if (filled !== wordLength) {
@@ -599,6 +606,11 @@ function updateHintsFromHistory() {
 }
 
 function submitGuess() {
+    // Verrou anti double-validation : reste actif jusqu'à la résolution complète
+    // de cette tentative (voir le reset plus bas, juste avant le traitement
+    // victoire/défaite/ligne suivante).
+    isSubmittingGuess = true;
+
     // Stop Pressure Timer if active
     if (typeof clearPressureTimer === 'function') {
         clearPressureTimer();
@@ -675,6 +687,7 @@ function submitGuess() {
     
     // Vérification Victoire/Défaite après l'animation
     setTimeout(() => {
+        isSubmittingGuess = false; // La tentative est résolue, on peut en accepter une nouvelle
         const isMultiplayer = isMultiplayerMode;
 
         if (guessString === targetWord) {
