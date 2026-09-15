@@ -155,16 +155,35 @@ async function checkDailyStatus() {
                 try {
                     const savedGuesses = JSON.parse(stats.daily_current_guesses);
                     if (Array.isArray(savedGuesses) && savedGuesses.length > 0) {
-                        
+
                         // Vider le localStorage pour éviter la double restauration
                         localStorage.removeItem(DAILY_PROGRESS_STORAGE_KEY);
-                        
+
                         savedGuesses.forEach(g => {
                             if (typeof g === 'string' && g.length === wordLength) {
                                 window.restoreGuess(g);
                             }
                         });
-                        showToast("Partie du jour reprise");
+
+                        const lastGuess = guesses[guesses.length - 1] || "";
+                        const victory = lastGuess === targetWord;
+
+                        // BUGFIX : si la dernière tentative restaurée a terminé la partie
+                        // (mot trouvé, ou 6 essais épuisés) mais que l'app/l'onglet a été
+                        // fermé avant que updateDailyStats() ait pu tourner (ex: juste après
+                        // l'animation de victoire), la partie restait "en suspens" en base :
+                        // on la revoyait rechargée mais jamais créditée ni terminée. On
+                        // finalise donc ici, comme le fait déjà restoreDailyProgressIfAny()
+                        // pour la sauvegarde locale.
+                        if (isGameOver) {
+                            const score = lastGuess ? calculateScore(victory, guesses.length, lastGuess) : 0;
+                            showEndScreen(victory, targetWord, null, score);
+                            if (typeof updateDailyStats === 'function') {
+                                updateDailyStats(victory, guesses.length, score);
+                            }
+                        } else {
+                            showToast("Partie du jour reprise");
+                        }
                     }
                 } catch(e) {
                     console.error("Erreur restauration guesses DB:", e);
